@@ -1,0 +1,57 @@
+/* ─── CHOP Design Tokens ─── */
+
+:root {
+    /* Surface */
+    --bg-base:        #0a0a08;
+    --bg-surface:     #111110;
+    --bg-elevated:    #1a1a17;
+    --bg-overlay:     #222220;
+    --bg-subtle:      #2a2a26;
+  
+    /* Amber accent system */
+    --accent-amber:        #e8a020;
+    --accent-amber-dim:    #a06a10;
+    --accent-amber-glow:   rgba(232, 160, 32, 0.12);
+    --accent-amber-border: rgba(232, 160, 32, 0.25);
+  
+    /* Generated / AI accent */
+    --accent-gen:        #6c8fff;
+    --accent-gen-dim:    #3a52b0;
+    --accent-gen-glow:   rgba(108, 143, 255, 0.1);
+    --accent-gen-border: rgba(108, 143, 255, 0.2);
+  
+    /* Text */
+    --text-primary:   #e8e6de;
+    --text-secondary: #888880;
+    --text-tertiary:  #555550;
+    --text-amber:     #e8a020;
+    --text-gen:       #8aabff;
+  
+    /* Borders */
+    --border-subtle:  rgba(255,255,255,0.05);
+    --border-default: rgba(255,255,255,0.08);
+    --border-strong:  rgba(255,255,255,0.14);
+  
+    /* Typography */
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    --font-sans: 'DM Sans', 'Helvetica Neue', sans-serif;
+  
+    /* Spacing */
+    --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+    --sp-5: 20px; --sp-6: 24px; --sp-8: 32px; --sp-10: 40px;
+  
+    /* Radius */
+    --r-sm: 3px;
+    --r-md: 6px;
+    --r-lg: 10px;
+  
+    /* Transitions */
+    --t-fast: 80ms ease;
+    --t-base: 150ms ease;
+    --t-slow: 250ms ease;
+  
+    /* Layout */
+    --sidebar-width:  220px;
+    --player-height:  72px;
+    --topbar-height:  56px;
+  }
