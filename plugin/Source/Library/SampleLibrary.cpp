@@ -6,6 +6,7 @@ SampleLibrary::SampleLibrary()
                       .getChildFile("Synthoven/Chop/library.json");
     libraryFile.getParentDirectory().createDirectory();
     load();
+    scanDirectory(defaultLibraryDir());
 }
 
 juce::String SampleLibrary::addSample(const juce::File& file)
@@ -108,6 +109,40 @@ bool SampleLibrary::toggleFavorite(const juce::String& id)
         }
     }
     return false;
+}
+
+void SampleLibrary::scanDirectory(const juce::File& dir)
+{
+    if (!dir.isDirectory())
+        return;
+
+    static const juce::StringArray audioExts { ".wav", ".aif", ".aiff", ".mp3", ".ogg", ".flac" };
+
+    // collect existing file paths so we don't double-add
+    juce::StringArray known;
+    for (auto& s : samples)
+        known.add(s.filePath);
+
+    juce::Array<juce::File> found;
+    dir.findChildFiles(found, juce::File::findFiles, true);
+
+    bool changed = false;
+    for (auto& f : found)
+    {
+        if (!audioExts.contains(f.getFileExtension().toLowerCase()))
+            continue;
+        if (known.contains(f.getFullPathName()))
+            continue;
+
+        Sample s    = extractMetadata(f);
+        s.id        = generateId();
+        s.addedAt   = juce::Time::currentTimeMillis();
+        samples.add(s);
+        changed = true;
+    }
+
+    if (changed)
+        save();
 }
 
 void SampleLibrary::load()

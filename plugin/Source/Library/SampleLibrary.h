@@ -20,11 +20,18 @@ public:
     // Favorites
     bool                  toggleFavorite(const juce::String& id);
 
+    // Directory scanning
+    void scanDirectory(const juce::File& dir);
+
     // Persistence
     void load();
     void save() const;
 
 private:
+    static const juce::File defaultLibraryDir()
+    {
+        return juce::File("C:\\Users\\sachi\\OneDrive\\Documents\\audio_samples");
+    }
     juce::Array<Sample> samples;
     juce::File          libraryFile;
 
