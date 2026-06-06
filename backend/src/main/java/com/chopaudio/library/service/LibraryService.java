@@ -27,6 +27,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -116,9 +117,11 @@ public class LibraryService {
     /**
      * Store uploaded audio files under the configured upload directory and
      * import each as a LIBRARY sample. Non-audio files are skipped. Idempotent:
-     * re-uploading the same file (same name) does not create duplicates.
+     * re-uploading the same file (same name) does not create a duplicate, but
+     * the existing sample is still returned so the caller always sees every
+     * file it uploaded.
      *
-     * @return the samples that were newly imported
+     * @return one sample per uploaded audio file (newly imported or pre-existing)
      */
     public List<SampleDto> importUploads(MultipartFile[] files) {
         if (files == null || files.length == 0) {
@@ -132,7 +135,8 @@ public class LibraryService {
             throw new IllegalStateException("Could not create upload directory: " + uploadDir, e);
         }
 
-        List<SampleDto> imported = new ArrayList<>();
+        List<SampleDto> result = new ArrayList<>();
+        int newlyImported = 0;
         for (MultipartFile file : files) {
             String original = file.getOriginalFilename();
             if (original == null || original.isBlank()) {
@@ -147,7 +151,6 @@ public class LibraryService {
 
             Path dest = uploadDir.resolve(fileName);
             String abs = dest.toAbsolutePath().toString();
-            boolean alreadyImported = sampleRepository.existsByFilePath(abs);
 
             try {
                 if (!Files.exists(dest)) {
@@ -158,19 +161,22 @@ public class LibraryService {
                 continue;
             }
 
-            if (alreadyImported) {
-                continue;
-            }
             try {
-                Sample sample = metadataService.fromFile(dest);
-                imported.add(mapper.toDto(sampleRepository.save(sample)));
+                Optional<Sample> existing = sampleRepository.findByFilePath(abs);
+                if (existing.isPresent()) {
+                    result.add(mapper.toDto(existing.get()));
+                } else {
+                    result.add(mapper.toDto(sampleRepository.save(metadataService.fromFile(dest))));
+                    newlyImported++;
+                }
             } catch (Exception e) {
                 log.warn("Could not import {}: {}", abs, e.getMessage());
             }
         }
 
-        log.info("Imported {} uploaded sample(s) of {} file(s)", imported.size(), files.length);
-        return imported;
+        log.info("Upload: {} file(s) -> {} returned ({} newly imported)",
+                files.length, result.size(), newlyImported);
+        return result;
     }
 
     private boolean isSupportedAudio(String fileName) {
