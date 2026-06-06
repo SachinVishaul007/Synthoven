@@ -54,6 +54,9 @@ function devFallback(action, payload) {
     case 'browseForFiles':
       return { ok: false, error: 'File browser only available inside the plugin' };
 
+    case 'selectLibraryFolder':
+      return { ok: true, data: MOCK_LIBRARY_SAMPLES };
+
     case 'play':
     case 'stop':
     case 'addSample':

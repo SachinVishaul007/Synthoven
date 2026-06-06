@@ -26,6 +26,12 @@ ChopEditor::ChopEditor(ChopProcessor& p)
                       return;
                   }
 
+                  if (action == "selectLibraryFolder")
+                  {
+                      handleSelectLibraryFolder(std::move(complete));
+                      return;
+                  }
+
                   complete(bridge.handleMessage(action, args[1]));
               }))
 {
@@ -76,5 +82,41 @@ void ChopEditor::handleBrowseForFiles(juce::WebBrowserComponent::NativeFunctionC
             obj->setProperty("ok", true);
             obj->setProperty("data", added);
             complete(juce::var(obj));
+        });
+}
+
+void ChopEditor::handleSelectLibraryFolder(juce::WebBrowserComponent::NativeFunctionCompletion complete)
+{
+    fileChooser = std::make_unique<juce::FileChooser>(
+        "Select library folder",
+        juce::File::getSpecialLocation(juce::File::userMusicDirectory),
+        juce::String());
+
+    fileChooser->launchAsync(
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+        [this, complete = std::move(complete)](const juce::FileChooser& fc)
+        {
+            auto result = fc.getResult();
+            if (result.isDirectory())
+            {
+                library.clear();
+                library.scanDirectory(result);
+
+                juce::Array<juce::var> added;
+                for (auto& s : library.getAllSamples())
+                    added.add(s.toVar());
+
+                auto* obj = new juce::DynamicObject();
+                obj->setProperty("ok", true);
+                obj->setProperty("data", added);
+                complete(juce::var(obj));
+            }
+            else
+            {
+                auto* obj = new juce::DynamicObject();
+                obj->setProperty("ok", false);
+                obj->setProperty("error", "No folder selected");
+                complete(juce::var(obj));
+            }
         });
 }

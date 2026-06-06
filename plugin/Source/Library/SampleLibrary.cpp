@@ -71,6 +71,12 @@ const Sample* SampleLibrary::getSample(const juce::String& id) const
     return nullptr;
 }
 
+void SampleLibrary::clear()
+{
+    samples.clear();
+    save();
+}
+
 juce::Array<Sample> SampleLibrary::search(const juce::String& query) const
 {
     auto words = juce::StringArray::fromTokens(query.toLowerCase().trim(), " ", "");

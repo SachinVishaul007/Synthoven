@@ -22,6 +22,7 @@ private:
     std::unique_ptr<juce::FileChooser> fileChooser;
 
     void handleBrowseForFiles(juce::WebBrowserComponent::NativeFunctionCompletion);
+    void handleSelectLibraryFolder(juce::WebBrowserComponent::NativeFunctionCompletion);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChopEditor)
 };

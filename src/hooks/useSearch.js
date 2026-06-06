@@ -60,7 +60,8 @@ export function useSearch() {
   return {
     query, setQuery,
     submittedQuery,
-    libraryResults, generatedResults,
+    libraryResults, setLibraryResults,
+    generatedResults,
     isSearching, isGenerating,
     hasSearched,
     loadAll, search, clear,

@@ -81,7 +81,7 @@ function EmptySearch() {
   );
 }
 
-export function ResultsPanel({ libraryResults, generatedResults, isSearching, isGenerating, hasSearched, submittedQuery, playingId, onPlay, onSave }) {
+export function ResultsPanel({ libraryResults, generatedResults, isSearching, isGenerating, hasSearched, submittedQuery, playingId, onPlay, onSave, onToggleFavorite }) {
   if (!hasSearched) return <EmptySearch />;
 
   return (
@@ -93,7 +93,7 @@ export function ResultsPanel({ libraryResults, generatedResults, isSearching, is
             <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>no library results</div>
           )}
           {libraryResults.map(s => (
-            <SampleRow key={s.id} sample={s} isPlaying={playingId === s.id} onPlay={onPlay} onSave={onSave} />
+            <SampleRow key={s.id} sample={s} isPlaying={playingId === s.id} onPlay={onPlay} onSave={onSave} onToggleFavorite={onToggleFavorite} />
           ))}
         </div>
       </div>
@@ -107,7 +107,7 @@ export function ResultsPanel({ libraryResults, generatedResults, isSearching, is
             <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>no generated results</div>
           )}
           {generatedResults.map(s => (
-            <SampleRow key={s.id} sample={s} isPlaying={playingId === s.id} onPlay={onPlay} onSave={onSave} />
+            <SampleRow key={s.id} sample={s} isPlaying={playingId === s.id} onPlay={onPlay} onSave={onSave} onToggleFavorite={onToggleFavorite} />
           ))}
         </div>
       </div>

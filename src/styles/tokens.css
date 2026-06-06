@@ -19,6 +19,12 @@
     --accent-gen-dim:    #3a52b0;
     --accent-gen-glow:   rgba(108, 143, 255, 0.1);
     --accent-gen-border: rgba(108, 143, 255, 0.2);
+
+    /* Red / Favorite accent */
+    --accent-red:        #ff4a5a;
+    --accent-red-dim:    #b02532;
+    --accent-red-glow:   rgba(255, 74, 90, 0.1);
+    --accent-red-border: rgba(255, 74, 90, 0.2);
   
     /* Text */
     --text-primary:   #e8e6de;

@@ -7,7 +7,7 @@ function formatDuration(s) {
   return ms >= 1000 ? `${s.toFixed(2)}s` : `${ms}ms`;
 }
 
-export function SampleRow({ sample, isPlaying, onPlay, onSave }) {
+export function SampleRow({ sample, isPlaying, onPlay, onSave, onToggleFavorite }) {
   const [hovered, setHovered] = useState(false);
   const [saved, setSaved] = useState(false);
   const isLib = sample.type === 'library';
@@ -99,6 +99,22 @@ export function SampleRow({ sample, isPlaying, onPlay, onSave }) {
             {saved ? '✓ saved' : '+ save'}
           </button>
         )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onToggleFavorite?.(sample); }}
+          style={{
+            width: 26, height: 26, borderRadius: 'var(--r-sm)',
+            border: sample.favorited ? '1px solid var(--accent-red-border)' : '1px solid var(--border-default)',
+            background: sample.favorited ? 'var(--accent-red-glow)' : 'var(--bg-overlay)',
+            color: sample.favorited ? 'var(--accent-red)' : 'var(--text-tertiary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            transition: 'all var(--t-base)',
+          }}
+          title={sample.favorited ? "Remove from Favorites" : "Add to Favorites"}
+        >
+          <svg width="11" height="11" viewBox="0 0 11 11" fill={sample.favorited ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.4">
+            <path d="M5.5 9.5s-4-2.8-4-5.6a2.4 2.4 0 0 1 4.8 0 2.4 2.4 0 0 1 4.8 0c0 2.8-4 5.6-4 5.6z" strokeLinejoin="round"/>
+          </svg>
+        </button>
         <button style={{
           width: 26, height: 26, borderRadius: 'var(--r-sm)',
           border: '1px solid var(--border-default)', background: 'var(--bg-overlay)',
