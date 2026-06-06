@@ -15,6 +15,14 @@ export function useSearch() {
 
   const generationTimer = useRef(null);
 
+  const loadAll = useCallback(async () => {
+    setIsSearching(true);
+    setHasSearched(true);
+    const res = await bridge.send('getSamples');
+    setLibraryResults(res.ok ? res.data : []);
+    setIsSearching(false);
+  }, []);
+
   const search = useCallback(async (q) => {
     if (!q.trim()) return;
 
@@ -55,6 +63,6 @@ export function useSearch() {
     libraryResults, generatedResults,
     isSearching, isGenerating,
     hasSearched,
-    search, clear,
+    loadAll, search, clear,
   };
 }

@@ -15,8 +15,10 @@ export default function App() {
   const player = usePlayer();
 
   useEffect(() => {
-    bridge.send('getSamples').then(res => {
-      if (res.ok) setLibraryCount(res.data.length);
+    search.loadAll().then(() => {
+      bridge.send('getSamples').then(res => {
+        if (res.ok) setLibraryCount(res.data.length);
+      });
     });
   }, []);
 
