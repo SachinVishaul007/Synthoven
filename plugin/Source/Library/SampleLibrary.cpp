@@ -74,25 +74,30 @@ const Sample* SampleLibrary::getSample(const juce::String& id) const
 juce::Array<Sample> SampleLibrary::search(const juce::String& query) const
 {
     auto words = juce::StringArray::fromTokens(query.toLowerCase().trim(), " ", "");
+    if (words.isEmpty())
+        return {};
+
     juce::Array<Sample> results;
 
     for (auto& s : samples)
     {
+        auto lowerName = s.name.toLowerCase();
+        auto lowerPack = s.pack.toLowerCase();
+
+        bool allMatch = true;
         for (auto& word : words)
         {
-            if (s.name.toLowerCase().contains(word) ||
-                s.pack.toLowerCase().contains(word))
-            {
-                results.add(s);
-                break;
-            }
+            bool wordFound = lowerName.contains(word) || lowerPack.contains(word);
 
-            bool tagHit = false;
-            for (auto& tag : s.tags)
-                if (tag.toLowerCase().contains(word)) { tagHit = true; break; }
+            if (!wordFound)
+                for (auto& tag : s.tags)
+                    if (tag.toLowerCase().contains(word)) { wordFound = true; break; }
 
-            if (tagHit) { results.add(s); break; }
+            if (!wordFound) { allMatch = false; break; }
         }
+
+        if (allMatch)
+            results.add(s);
     }
     return results;
 }
