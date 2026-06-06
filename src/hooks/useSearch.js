@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
-import { MOCK_LIBRARY_SAMPLES, MOCK_GENERATED_SAMPLES } from '../data/samples';
+import { MOCK_GENERATED_SAMPLES } from '../data/samples';
+import bridge from '../bridge';
 
 const GENERATION_DELAY = 2200;
 
@@ -14,10 +15,9 @@ export function useSearch() {
 
   const generationTimer = useRef(null);
 
-  const search = useCallback((q) => {
+  const search = useCallback(async (q) => {
     if (!q.trim()) return;
 
-    const trimmed = q.trim().toLowerCase();
     setSubmittedQuery(q.trim());
     setHasSearched(true);
     setIsSearching(true);
@@ -27,17 +27,11 @@ export function useSearch() {
 
     if (generationTimer.current) clearTimeout(generationTimer.current);
 
-    // Library: near-instant
-    setTimeout(() => {
-      const filtered = MOCK_LIBRARY_SAMPLES.filter(s =>
-        s.tags.some(t => trimmed.split(' ').some(w => t.includes(w))) ||
-        s.name.toLowerCase().includes(trimmed)
-      );
-      setLibraryResults(filtered);
-      setIsSearching(false);
-    }, 320);
+    const res = await bridge.send('search', { query: q.trim() });
+    setLibraryResults(res.ok ? res.data : []);
+    setIsSearching(false);
 
-    // Generated: simulated AI latency
+    // AI generation wired in a later phase — mock for now
     generationTimer.current = setTimeout(() => {
       setGeneratedResults(MOCK_GENERATED_SAMPLES);
       setIsGenerating(false);

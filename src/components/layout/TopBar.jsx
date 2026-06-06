@@ -1,7 +1,16 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { SearchBar } from '../search/SearchBar';
 
-export function TopBar({ query, onChange, onSearch, onClear, hasSearched, submittedQuery }) {
+export function TopBar({ query, onChange, onSearch, onClear, hasSearched, submittedQuery, onUpload }) {
+  const fileInputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleUploadClick = async () => {
+    if (uploading) return;
+    setUploading(true);
+    try { await onUpload?.(); } finally { setUploading(false); }
+  };
+
   return (
     <div style={{
       height: 'var(--topbar-height)',
@@ -27,15 +36,30 @@ export function TopBar({ query, onChange, onSearch, onClear, hasSearched, submit
           </svg>
         </button>
 
-        <button style={{
-          width: 32, height: 32, borderRadius: 'var(--r-md)',
-          border: '1px solid var(--border-subtle)', background: 'var(--bg-elevated)',
-          color: 'var(--text-tertiary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-        }} title="Import">
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4">
-            <path d="M6.5 1v8M3 6l3.5 3.5L10 6"/>
-            <path d="M1 11.5h11"/>
-          </svg>
+        <button
+          onClick={handleUploadClick}
+          disabled={uploading}
+          style={{
+            width: 32, height: 32, borderRadius: 'var(--r-md)',
+            border: `1px solid ${uploading ? 'var(--accent-amber-border)' : 'var(--border-subtle)'}`,
+            background: uploading ? 'var(--bg-overlay)' : 'var(--bg-elevated)',
+            color: uploading ? 'var(--accent-amber)' : 'var(--text-tertiary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: uploading ? 'default' : 'pointer',
+            transition: 'all var(--t-base)',
+          }}
+          title="Upload samples"
+        >
+          {uploading
+            ? <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4" style={{ animation: 'spin 1s linear infinite' }}>
+                <path d="M6.5 1a5.5 5.5 0 1 1-3.89 1.61"/>
+                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+              </svg>
+            : <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.4">
+                <path d="M6.5 9V1M3 4l3.5-3.5L10 4"/>
+                <path d="M1 11.5h11"/>
+              </svg>
+          }
         </button>
       </div>
     </div>

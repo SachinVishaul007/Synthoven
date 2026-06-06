@@ -1,26 +1,25 @@
 import { useState, useCallback } from 'react';
+import bridge from '../bridge';
 
 export function usePlayer() {
   const [playing, setPlaying] = useState(null);
   const [currentSample, setCurrentSample] = useState(null);
 
-  const play = useCallback((sample) => {
+  const play = useCallback(async (sample) => {
     setPlaying(sample.id);
     setCurrentSample(sample);
-    // TODO: trigger Web Audio API here
+    await bridge.send('play', { id: sample.id });
   }, []);
 
-  const stop = useCallback(() => {
+  const stop = useCallback(async () => {
     setPlaying(null);
-    // TODO: stop Web Audio API here
+    await bridge.send('stop');
   }, []);
 
   const toggle = useCallback((sample) => {
-    if (playing === sample.id) { stop(); }
-    else { play(sample); }
+    if (playing === sample.id) stop();
+    else play(sample);
   }, [playing, play, stop]);
 
-  const isPlaying = useCallback((id) => playing === id, [playing]);
-
-  return { playing, currentSample, play, stop, toggle, isPlaying };
+  return { playing, currentSample, play, stop, toggle };
 }

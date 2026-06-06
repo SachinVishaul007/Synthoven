@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import './styles/global.css';
 import { Sidebar } from './components/layout/Sidebar';
 import { TopBar } from './components/layout/TopBar';
@@ -6,19 +6,29 @@ import { ResultsPanel } from './components/results/ResultsPanel';
 import { PlayerBar } from './components/player/PlayerBar';
 import { useSearch } from './hooks/useSearch';
 import { usePlayer } from './hooks/usePlayer';
+import bridge from './bridge';
 
 export default function App() {
   const [activeSection, setActiveSection] = useState('library');
+  const [libraryCount, setLibraryCount] = useState(0);
   const search = useSearch();
   const player = usePlayer();
 
-  const handlePlay = (sample) => {
-    player.toggle(sample);
+  useEffect(() => {
+    bridge.send('getSamples').then(res => {
+      if (res.ok) setLibraryCount(res.data.length);
+    });
+  }, []);
+
+  const handleSave = async (sample) => {
+    const res = await bridge.send('addSample', { filePath: sample.filePath });
+    if (res.ok) setLibraryCount(c => c + 1);
   };
 
-  const handleSave = (sample) => {
-    // In production: POST to API, add to library
-    console.log('Saving generated sample to library:', sample.id);
+  const handleUpload = async () => {
+    const res = await bridge.send('browseForFiles', {});
+    if (res.ok) setLibraryCount(c => c + (res.data?.length ?? 0));
+    return res;
   };
 
   return (
@@ -32,6 +42,7 @@ export default function App() {
       <Sidebar
         activeSection={activeSection}
         onNavigate={setActiveSection}
+        libraryCount={libraryCount}
       />
 
       <div style={{
@@ -48,6 +59,7 @@ export default function App() {
           onClear={search.clear}
           hasSearched={search.hasSearched}
           submittedQuery={search.submittedQuery}
+          onUpload={handleUpload}
         />
 
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -59,7 +71,7 @@ export default function App() {
             hasSearched={search.hasSearched}
             submittedQuery={search.submittedQuery}
             playingId={player.playing}
-            onPlay={handlePlay}
+            onPlay={player.toggle}
             onSave={handleSave}
           />
         </div>

@@ -42,7 +42,7 @@ const NAV_ICONS = {
   ),
 };
 
-export function Sidebar({ activeSection, onNavigate }) {
+export function Sidebar({ activeSection, onNavigate, libraryCount = 0 }) {
   return (
     <div style={{
       width: 'var(--sidebar-width)',
@@ -110,7 +110,7 @@ export function Sidebar({ activeSection, onNavigate }) {
           display: 'flex', justifyContent: 'space-between',
         }}>
           <span>library</span>
-          <span style={{ color: 'var(--accent-amber)' }}>4 samples</span>
+          <span style={{ color: 'var(--accent-amber)' }}>{libraryCount} sample{libraryCount !== 1 ? 's' : ''}</span>
         </div>
         <div style={{ height: '2px', background: 'var(--bg-overlay)', borderRadius: '1px', overflow: 'hidden' }}>
           <div style={{ width: '12%', height: '100%', background: 'var(--accent-amber)', borderRadius: '1px' }} />
