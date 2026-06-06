@@ -1,5 +1,38 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { SampleRow } from './SampleRow';
+import { Pagination } from '../ui/Pagination';
+
+const PAGE_SIZE = 10;
+
+/**
+ * A scrollable, paginated (10/page) list of samples with its own page state.
+ * Resets to page 1 whenever the underlying list changes.
+ */
+function SampleList({ samples, emptyText, isLoading, playingId, onPlay, onSave, accent }) {
+  const [page, setPage] = useState(1);
+
+  useEffect(() => { setPage(1); }, [samples]);
+
+  const pageCount = Math.max(1, Math.ceil(samples.length / PAGE_SIZE));
+  const safePage = Math.min(page, pageCount);
+  const visible = samples.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  return (
+    <>
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+        {!isLoading && samples.length === 0 && (
+          <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>
+            {emptyText}
+          </div>
+        )}
+        {visible.map(s => (
+          <SampleRow key={s.id} sample={s} isPlaying={playingId === s.id} onPlay={onPlay} onSave={onSave} />
+        ))}
+      </div>
+      <Pagination page={safePage} pageSize={PAGE_SIZE} total={samples.length} onPage={setPage} accent={accent} />
+    </>
+  );
+}
 
 function SpinnerDots({ accent }) {
   return (
@@ -81,35 +114,60 @@ function EmptySearch() {
   );
 }
 
-export function ResultsPanel({ libraryResults, generatedResults, isSearching, isGenerating, hasSearched, submittedQuery, playingId, onPlay, onSave }) {
+export function ResultsPanel({ libraryResults, generatedResults, isSearching, isGenerating, hasSearched, submittedQuery, mode = 'search', playingId, onPlay, onSave }) {
   if (!hasSearched) return <EmptySearch />;
+
+  // Single-column view used for imported / browsed library files.
+  if (mode === 'library') {
+    return (
+      <div style={{ display: 'flex', flex: 1, flexDirection: 'column', overflow: 'hidden' }}>
+        <SectionHeader
+          label={submittedQuery ? `Imported · ${submittedQuery}` : 'Your Library'}
+          count={isSearching ? null : libraryResults.length}
+          accent="var(--accent-amber)"
+          isLoading={isSearching}
+        />
+        <SampleList
+          samples={libraryResults}
+          emptyText="no audio files found"
+          isLoading={isSearching}
+          playingId={playingId}
+          onPlay={onPlay}
+          onSave={onSave}
+          accent="var(--accent-amber)"
+        />
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <SectionHeader label="Your Library" count={isSearching ? null : libraryResults.length} accent="var(--accent-amber)" isLoading={isSearching} />
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {!isSearching && libraryResults.length === 0 && (
-            <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>no library results</div>
-          )}
-          {libraryResults.map(s => (
-            <SampleRow key={s.id} sample={s} isPlaying={playingId === s.id} onPlay={onPlay} onSave={onSave} />
-          ))}
-        </div>
+        <SampleList
+          samples={libraryResults}
+          emptyText="no library results"
+          isLoading={isSearching}
+          playingId={playingId}
+          onPlay={onPlay}
+          onSave={onSave}
+          accent="var(--accent-amber)"
+        />
       </div>
 
       <div style={{ width: '1px', background: 'var(--border-subtle)', flexShrink: 0 }} />
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <SectionHeader label="AI Generated" count={isGenerating ? null : generatedResults.length} accent="var(--accent-gen)" isLoading={isGenerating} badge="live" />
-        <div style={{ flex: 1, overflowY: 'auto' }}>
-          {!isGenerating && generatedResults.length === 0 && (
-            <div style={{ padding: '40px 24px', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '12px', fontFamily: 'var(--font-mono)' }}>no generated results</div>
-          )}
-          {generatedResults.map(s => (
-            <SampleRow key={s.id} sample={s} isPlaying={playingId === s.id} onPlay={onPlay} onSave={onSave} />
-          ))}
-        </div>
+        <SampleList
+          samples={generatedResults}
+          emptyText="no generated results"
+          isLoading={isGenerating}
+          playingId={playingId}
+          onPlay={onPlay}
+          onSave={onSave}
+          accent="var(--accent-gen)"
+        />
       </div>
     </div>
   );

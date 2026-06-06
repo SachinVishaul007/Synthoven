@@ -6,9 +6,12 @@ import { ResultsPanel } from './components/results/ResultsPanel';
 import { PlayerBar } from './components/player/PlayerBar';
 import { useSearch } from './hooks/useSearch';
 import { usePlayer } from './hooks/usePlayer';
+import { api } from './api/client';
+import { mapSamples } from './api/mapper';
 
 export default function App() {
   const [activeSection, setActiveSection] = useState('library');
+  const [isImporting, setIsImporting] = useState(false);
   const search = useSearch();
   const player = usePlayer();
 
@@ -17,8 +20,31 @@ export default function App() {
   };
 
   const handleSave = (sample) => {
-    // In production: POST to API, add to library
-    console.log('Saving generated sample to library:', sample.id);
+    // Generated samples are already persisted by the backend; "save" pins one
+    // by favoriting it so it surfaces under the Favorites view.
+    api.toggleFavorite(sample.id).catch(err =>
+      console.error('Failed to save sample:', err.message),
+    );
+  };
+
+  const handleImportFolder = async (audioFiles, folderName) => {
+    if (!audioFiles || audioFiles.length === 0) {
+      search.showSamples([], folderName || 'no audio files');
+      return;
+    }
+    setIsImporting(true);
+    try {
+      const imported = await api.uploadFiles(audioFiles);
+      const label = folderName
+        ? `${folderName} (${imported.length}/${audioFiles.length} files)`
+        : `${imported.length} files`;
+      search.showSamples(mapSamples(imported), label);
+    } catch (err) {
+      console.error('Import failed:', err.message);
+      search.showSamples([], `import failed — ${err.message}`);
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   return (
@@ -48,7 +74,22 @@ export default function App() {
           onClear={search.clear}
           hasSearched={search.hasSearched}
           submittedQuery={search.submittedQuery}
+          onImportFolder={handleImportFolder}
+          isImporting={isImporting}
         />
+
+        {search.error && (
+          <div style={{
+            padding: '8px 20px',
+            fontSize: '11px',
+            fontFamily: 'var(--font-mono)',
+            color: '#ff6b6b',
+            background: 'rgba(255,107,107,0.08)',
+            borderBottom: '1px solid rgba(255,107,107,0.25)',
+          }}>
+            ⚠ {search.error}
+          </div>
+        )}
 
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <ResultsPanel
@@ -58,6 +99,7 @@ export default function App() {
             isGenerating={search.isGenerating}
             hasSearched={search.hasSearched}
             submittedQuery={search.submittedQuery}
+            mode={search.mode}
             playingId={player.playing}
             onPlay={handlePlay}
             onSave={handleSave}
