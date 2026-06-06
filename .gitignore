@@ -36,3 +36,8 @@ pnpm-debug.log*
 
 # Local generated audio (when you wire up real generation)
 src/assets/generated/
+
+# Plugin local build and dependencies
+plugin/build/
+plugin/ninja/
+plugin/webview2/
