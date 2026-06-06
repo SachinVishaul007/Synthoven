@@ -32,7 +32,7 @@ target_sources(Chop PRIVATE
 )
 
 target_include_directories(Chop PRIVATE
-    "C:/Users/sachi/tools/webview2/extracted/build/native/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/webview2/build/native/include"
 )
 
 target_compile_definitions(Chop PUBLIC
@@ -45,7 +45,7 @@ target_compile_definitions(Chop PUBLIC
 
 add_custom_command(TARGET Chop_Standalone POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "C:/Users/sachi/tools/webview2/extracted/build/native/x64/WebView2Loader.dll"
+        "${CMAKE_CURRENT_SOURCE_DIR}/webview2/build/native/x64/WebView2Loader.dll"
         "$<TARGET_FILE_DIR:Chop_Standalone>"
     COMMENT "Copying WebView2Loader.dll"
 )
