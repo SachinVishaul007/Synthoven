@@ -66,17 +66,21 @@ public class StableAudioClient {
         return "stableaudio";
     }
 
+    public List<Sample> generate(String prompt, int count) {
+        return generate(prompt, count, null);
+    }
+
     /**
      * Generate {@code count} samples for the prompt. Each is a separate request
      * (Stable Audio returns one clip per call); a failure on any single request
      * aborts the job. Blocking — callers run this on an async executor.
      */
-    public List<Sample> generate(String prompt, int count) {
-        log.info("[stableaudio] Generating {} sample(s) for prompt: {}", count, prompt);
+    public List<Sample> generate(String prompt, int count, String initAudioPath) {
+        log.info("[stableaudio] Generating {} sample(s) for prompt: {} (initAudioPath: {})", count, prompt, initAudioPath);
 
         List<Sample> samples = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            byte[] audio = requestAudio(prompt);
+            byte[] audio = requestAudio(prompt, initAudioPath);
             if (audio == null || audio.length == 0) {
                 throw new IllegalStateException("Stable Audio returned no audio bytes");
             }
@@ -104,7 +108,7 @@ public class StableAudioClient {
         return samples;
     }
 
-    private byte[] requestAudio(String prompt) {
+    private byte[] requestAudio(String prompt, String initAudioPath) {
         MultipartBodyBuilder body = new MultipartBodyBuilder();
         body.part("prompt", prompt);
         body.part("duration", String.valueOf(durationSeconds));
@@ -112,8 +116,17 @@ public class StableAudioClient {
         body.part("steps", String.valueOf(steps));
         body.part("cfg_scale", String.valueOf(cfgScale));
 
+        String uriPath = endpointPath;
+        if (initAudioPath != null && !initAudioPath.isBlank()) {
+            body.part("audio", new org.springframework.core.io.FileSystemResource(Path.of(initAudioPath)));
+            body.part("audio_strength", "0.7");
+            if (uriPath.contains("text-to-audio")) {
+                uriPath = uriPath.replace("text-to-audio", "audio-to-audio");
+            }
+        }
+
         return webClient.post()
-                .uri(endpointPath)
+                .uri(uriPath)
                 .accept(MediaType.parseMediaType("audio/*"))
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(BodyInserters.fromMultipartData(body.build()))

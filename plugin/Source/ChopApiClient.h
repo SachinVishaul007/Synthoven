@@ -50,6 +50,9 @@ public:
     void generate (const juce::String& prompt, double durationSeconds, double cfgScale,
                    const juce::String& category, JobCallback cb);
 
+    void generateAudioToAudio (const juce::String& prompt, double durationSeconds, double cfgScale,
+                               const juce::String& category, const juce::File& initAudioFile, JobCallback cb);
+
     /** GET an endpoint returning a SampleDto[] (e.g. "/api/library/samples/library"). */
     void getSamples (const juce::String& path, SamplesCallback cb);
 

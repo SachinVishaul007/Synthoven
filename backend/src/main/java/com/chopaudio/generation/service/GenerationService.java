@@ -16,6 +16,8 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -81,22 +83,27 @@ public class GenerationService {
     }
 
     /** Generate using whichever provider is configured. Blocking. */
-    private List<Sample> invokeProvider(String prompt, int count, Double durationSeconds, Double cfgScale) {
+    private List<Sample> invokeProvider(String prompt, int count, Double durationSeconds, Double cfgScale, String initAudioPath) {
         if ("suno".equals(activeProvider)) {
             return sunoClient.generate(prompt, count);
         }
         if ("stableaudio".equals(activeProvider)) {
-            return stableAudioClient.generate(prompt, count);
+            return stableAudioClient.generate(prompt, count, initAudioPath);
         }
         if ("localstableaudio".equals(activeProvider)) {
-            return localStableAudioClient.generate(prompt, count, durationSeconds, cfgScale);
+            return localStableAudioClient.generate(prompt, count, durationSeconds, cfgScale, initAudioPath);
         }
         return mockClient.generate(prompt, count);
     }
 
     /** Backwards-compatible entry point (no per-request tuning). */
     public GenerationJobDto startJob(String prompt, Integer requestedCount) {
-        return startJob(prompt, requestedCount, null, null, null);
+        return startJob(prompt, requestedCount, null, null, null, null);
+    }
+
+    public GenerationJobDto startJob(String prompt, Integer requestedCount,
+                                     Double durationSeconds, Double cfgScale, String category) {
+        return startJob(prompt, requestedCount, durationSeconds, cfgScale, category, null);
     }
 
     /**
@@ -106,7 +113,8 @@ public class GenerationService {
      * the prompt to steer the kind of sound.
      */
     public GenerationJobDto startJob(String prompt, Integer requestedCount,
-                                     Double durationSeconds, Double cfgScale, String category) {
+                                     Double durationSeconds, Double cfgScale, String category,
+                                     String initAudioPath) {
         int count = clamp(requestedCount);
         String effectivePrompt = applyCategory(prompt, category);
         String jobId = activeProvider + "_" + UUID.randomUUID().toString().substring(0, 8);
@@ -114,6 +122,7 @@ public class GenerationService {
         JobState state = new JobState(jobId, effectivePrompt, activeProvider);
         state.durationSeconds = durationSeconds;
         state.cfgScale = cfgScale;
+        state.initAudioPath = initAudioPath;
         jobs.put(jobId, state);
 
         // Run on the shared executor — submitting via the injected bean (rather
@@ -138,7 +147,7 @@ public class GenerationService {
         state.status = "generating";
         try {
             List<Sample> generated = invokeProvider(state.prompt, DEFAULT_COUNT,
-                    state.durationSeconds, state.cfgScale);
+                    state.durationSeconds, state.cfgScale, state.initAudioPath);
             // Ensure every generated sample lives on disk in the generated folder:
             // Stable Audio writes locally already; URL-based providers (Suno) are
             // downloaded here so they can be streamed and dragged into a DAW.
@@ -149,6 +158,14 @@ public class GenerationService {
         } catch (Exception e) {
             log.error("Generation job {} failed: {}", jobId, e.getMessage());
             state.fail(e.getMessage());
+        } finally {
+            if (state.initAudioPath != null) {
+                try {
+                    Files.deleteIfExists(Path.of(state.initAudioPath));
+                } catch (Exception ex) {
+                    log.warn("Failed to delete temporary init audio file: {}", state.initAudioPath, ex);
+                }
+            }
         }
     }
 
@@ -200,6 +217,7 @@ public class GenerationService {
         final Instant createdAt = Instant.now();
         volatile Double durationSeconds;
         volatile Double cfgScale;
+        volatile String initAudioPath;
         volatile String status = "queued";
         volatile List<SampleDto> samples = List.of();
         volatile String error;

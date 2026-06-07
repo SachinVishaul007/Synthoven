@@ -76,18 +76,23 @@ public class LocalStableAudioClient {
     }
 
     public List<Sample> generate(String prompt, int count) {
-        return generate(prompt, count, null, null);
+        return generate(prompt, count, null, null, null);
+    }
+
+    public List<Sample> generate(String prompt, int count, Double requestedDuration, Double requestedCfg) {
+        return generate(prompt, count, requestedDuration, requestedCfg, null);
     }
 
     /**
      * @param requestedDuration desired length in seconds (configured default when null)
      * @param requestedCfg      CFG / "creativity" scale (configured default when null)
+     * @param initAudioPath     path to the initial audio file for audio-to-audio generation (optional)
      */
-    public List<Sample> generate(String prompt, int count, Double requestedDuration, Double requestedCfg) {
+    public List<Sample> generate(String prompt, int count, Double requestedDuration, Double requestedCfg, String initAudioPath) {
         double dur = requestedDuration != null && requestedDuration > 0 ? requestedDuration : durationSeconds;
         double cfg = requestedCfg != null && requestedCfg > 0 ? requestedCfg : cfgScale;
-        log.info("[local-sa3] Generating {} sample(s) (duration={}s, cfg={}) for prompt: {}",
-                count, dur, cfg, prompt);
+        log.info("[local-sa3] Generating {} sample(s) (duration={}s, cfg={}, initAudioPath={}) for prompt: {}",
+                count, dur, cfg, initAudioPath, prompt);
 
         List<Sample> samples = new ArrayList<>();
         for (int i = 0; i < count; i++) {
@@ -99,7 +104,7 @@ public class LocalStableAudioClient {
                 throw new IllegalStateException("Could not prepare output path: " + e.getMessage(), e);
             }
 
-            runCli(prompt, out, dur, cfg);
+            runCli(prompt, out, dur, cfg, initAudioPath);
 
             if (!Files.isReadable(out)) {
                 throw new IllegalStateException("stable-audio CLI did not produce " + out);
@@ -129,7 +134,7 @@ public class LocalStableAudioClient {
         return samples;
     }
 
-    private void runCli(String prompt, Path out, double dur, double cfg) {
+    private void runCli(String prompt, Path out, double dur, double cfg, String initAudioPath) {
         List<String> cmd = new ArrayList<>(List.of(
                 uvPath, "run", "--directory", repoDir,
                 "stable-audio",
@@ -139,6 +144,10 @@ public class LocalStableAudioClient {
                 "--steps", String.valueOf(steps),
                 "--cfg-scale", String.valueOf(cfg),
                 "-o", out.toString()));
+        if (initAudioPath != null && !initAudioPath.isBlank()) {
+            cmd.add("--init-audio");
+            cmd.add(initAudioPath);
+        }
         if (device != null && !device.isBlank()) {
             cmd.add("--device");
             cmd.add(device);

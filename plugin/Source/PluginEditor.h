@@ -4,6 +4,7 @@
 #include "PluginProcessor.h"
 #include "SampleListBox.h"
 #include "WaveformPreviewComponent.h"
+#include "AudioInputDropTarget.h"
 
 class FoldersOnlyFilter : public juce::FileFilter
 {
@@ -77,6 +78,8 @@ private:
     juce::Label       durationHeaderLabel;
     juce::Slider      durationSlider;
     juce::Label       durationValueLabel;
+    juce::Label       audioInputHeaderLabel;
+    AudioInputDropTarget audioInputDropTarget;
     juce::TextButton  generateSoundButton { "GENERATE SOUND" };
 
     // ── Audio visualizer (waveform of the audio being auditioned) ──────────
