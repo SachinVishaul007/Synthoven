@@ -10,6 +10,13 @@ ChopAudioProcessor::ChopAudioProcessor()
     readAheadThread.startThread();
     loadEmbeddingCache();
     modelManager.initialize();
+
+    // Configure the audition waveform visualizer.
+    audioVisualiser.setBufferSize (512);
+    audioVisualiser.setSamplesPerBlock (16);
+    audioVisualiser.setRepaintRate (30);
+    audioVisualiser.setColours (juce::Colour (0xff161619),   // background
+                                juce::Colour (0xff19c3b3));  // waveform (teal accent)
 }
 
 ChopAudioProcessor::~ChopAudioProcessor()
@@ -54,6 +61,9 @@ void ChopAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     // A mono source only fills channel 0 — mirror it to the right channel.
     if (buffer.getNumChannels() >= 2 && numSourceChannels.load() == 1)
         buffer.copyFrom (1, 0, buffer, 0, 0, buffer.getNumSamples());
+
+    // Feed the live waveform visualizer (safe to call from the audio thread).
+    audioVisualiser.pushBuffer (buffer);
 }
 
 void ChopAudioProcessor::auditionFile (const juce::File& file)

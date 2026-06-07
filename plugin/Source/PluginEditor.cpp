@@ -74,30 +74,6 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     promptEditor.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff34343c));
     addAndMakeVisible (promptEditor);
 
-    sectionHeader (categoryHeaderLabel, "CATEGORY");
-    addAndMakeVisible (categoryHeaderLabel);
-
-    // Display text + the prompt hint we send to the backend (parallel arrays).
-    struct Cat { const char* label; const char* hint; };
-    static const Cat cats[] = {
-        { "Drums - One Shot",  "drum one shot, percussive hit" },
-        { "Bass - One Shot",   "bass one shot" },
-        { "Melodic Loop",      "melodic loop" },
-        { "Pad / Texture",     "ambient pad texture" },
-        { "FX / Riser",        "sound effect, riser transition" },
-        { "Vocal Chop",        "vocal chop" },
-        { "Any / Custom",      "" }
-    };
-    for (int i = 0; i < (int) (sizeof (cats) / sizeof (Cat)); ++i)
-    {
-        categoryCombo.addItem (cats[i].label, i + 1);
-        categoryHints.add (cats[i].hint);
-    }
-    categoryCombo.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff202024));
-    categoryCombo.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xff34343c));
-    categoryCombo.setSelectedId (1, juce::dontSendNotification);
-    addAndMakeVisible (categoryCombo);
-
     sectionHeader (durationHeaderLabel, "MAX DURATION");
     addAndMakeVisible (durationHeaderLabel);
 
@@ -120,23 +96,15 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     durationValueLabel.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (durationValueLabel);
 
-    sectionHeader (creativityHeaderLabel, "CREATIVITY / VARIATION");
-    addAndMakeVisible (creativityHeaderLabel);
-
-    creativitySlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    creativitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 24);
-    creativitySlider.setRange (0.0, 100.0, 1.0);
-    creativitySlider.setValue (75.0, juce::dontSendNotification);
-    creativitySlider.setTextValueSuffix (" %");
-    creativitySlider.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xff19c3b3));
-    creativitySlider.setColour (juce::Slider::textBoxTextColourId, juce::Colours::white.withAlpha (0.8f));
-    creativitySlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    addAndMakeVisible (creativitySlider);
-
     generateSoundButton.onClick = [this] { doGenerate(); };
     generateSoundButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff19c3b3));
     generateSoundButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff0b1f1d));
     addAndMakeVisible (generateSoundButton);
+
+    // Audio visualizer — a live waveform of whatever is being auditioned.
+    sectionHeader (visualizerHeaderLabel, "NOW PLAYING");
+    addAndMakeVisible (visualizerHeaderLabel);
+    addAndMakeVisible (processorRef.getVisualiser());
 
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.6f));
     statusLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
@@ -266,13 +234,9 @@ void ChopAudioProcessorEditor::doGenerate()
     }
 
     const double duration = durationSlider.getValue();
-    // Creativity 0–100% → CFG scale 5.0 (strict) … 1.0 (loose/creative).
-    const double creativity = creativitySlider.getValue();
-    const double cfgScale = 1.0 + (1.0 - creativity / 100.0) * 4.0;
-
-    const int catIndex = categoryCombo.getSelectedId() - 1;
-    const juce::String category = juce::isPositiveAndBelow (catIndex, categoryHints.size())
-                                    ? categoryHints[catIndex] : juce::String();
+    // Fixed CFG scale tuned for good prompt adherence without over-constraining.
+    const double cfgScale = 3.0;
+    const juce::String category; // category control removed; rely on the prompt alone
 
     setStatus ("Generating \"" + prompt + "\" (" + juce::String (duration, 1)
                + "s)… this can take a little while");
@@ -356,6 +320,14 @@ void ChopAudioProcessorEditor::resized()
     }
     centrePane.removeFromTop (8); // spacer
 
+    // Audio visualizer strip pinned to the bottom of the centre pane.
+    {
+        auto vizArea = centrePane.removeFromBottom (90);
+        visualizerHeaderLabel.setBounds (vizArea.removeFromTop (16));
+        processorRef.getVisualiser().setBounds (vizArea);
+        centrePane.removeFromBottom (8); // spacer above the visualizer
+    }
+
     list->setBounds (centrePane);
 
     // Right pane: generation setup panel
@@ -366,20 +338,12 @@ void ChopAudioProcessorEditor::resized()
     promptEditor.setBounds (genPanel.removeFromTop (110));
     genPanel.removeFromTop (12);
 
-    categoryHeaderLabel.setBounds (genPanel.removeFromTop (16));
-    categoryCombo.setBounds (genPanel.removeFromTop (28));
-    genPanel.removeFromTop (12);
-
     durationHeaderLabel.setBounds (genPanel.removeFromTop (16));
     {
         auto durRow = genPanel.removeFromTop (24);
         durationValueLabel.setBounds (durRow.removeFromRight (52));
         durationSlider.setBounds (durRow);
     }
-    genPanel.removeFromTop (12);
-
-    creativityHeaderLabel.setBounds (genPanel.removeFromTop (16));
-    creativitySlider.setBounds (genPanel.removeFromTop (60));
     genPanel.removeFromTop (16);
 
     generateSoundButton.setBounds (genPanel.removeFromTop (40));

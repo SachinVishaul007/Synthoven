@@ -64,7 +64,16 @@ target_link_libraries(ChopPlugin
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags)
 
-if(WIN32)
+if(APPLE)
+    FetchContent_Declare(
+        onnxruntime
+        URL https://github.com/microsoft/onnxruntime/releases/download/v1.18.0/onnxruntime-osx-arm64-1.18.0.tgz
+    )
+    FetchContent_MakeAvailable(onnxruntime)
+
+    target_include_directories(ChopPlugin PRIVATE "${onnxruntime_SOURCE_DIR}/include")
+    target_link_libraries(ChopPlugin PRIVATE "${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.dylib")
+elseif(WIN32)
     FetchContent_Declare(
         onnxruntime
         URL https://github.com/microsoft/onnxruntime/releases/download/v1.18.0/onnxruntime-win-x64-1.18.0.zip

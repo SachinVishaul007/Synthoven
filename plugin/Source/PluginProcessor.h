@@ -50,6 +50,10 @@ public:
 
     ChopApiClient& getApiClient() { return apiClient; }
 
+    // Live waveform of the auditioned audio. Owned here so it outlives the
+    // editor and can be safely fed from processBlock on the audio thread.
+    juce::AudioVisualiserComponent& getVisualiser() { return audioVisualiser; }
+
     juce::File getLibraryFolder() const { return libraryFolder; }
     void setLibraryFolder (const juce::File& folder);
 
@@ -218,6 +222,8 @@ private:
     juce::TimeSliceThread    readAheadThread { "chop-audio-read" };
     juce::AudioTransportSource transport;
     std::unique_ptr<juce::AudioFormatReaderSource> readerSource;
+
+    juce::AudioVisualiserComponent audioVisualiser { 2 };
 
     std::atomic<int> numSourceChannels { 0 };
     juce::File libraryFolder;

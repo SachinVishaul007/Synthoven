@@ -72,16 +72,13 @@ private:
     juce::Label       genHeaderLabel;
     juce::Label       promptHeaderLabel;
     juce::TextEditor  promptEditor;
-    juce::Label       categoryHeaderLabel;
-    juce::ComboBox    categoryCombo;
     juce::Label       durationHeaderLabel;
     juce::Slider      durationSlider;
     juce::Label       durationValueLabel;
-    juce::Label       creativityHeaderLabel;
-    juce::Slider      creativitySlider;
     juce::TextButton  generateSoundButton { "GENERATE SOUND" };
 
-    juce::StringArray categoryHints; // parallel to categoryCombo items
+    // ── Audio visualizer (waveform of the audio being auditioned) ──────────
+    juce::Label       visualizerHeaderLabel;
 
     // Local library browser components
     juce::TextButton  selectFolderButton { "Select Folder..." };
