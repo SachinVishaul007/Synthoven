@@ -87,7 +87,7 @@ elseif(WIN32)
 
     target_include_directories(ChopPlugin PRIVATE "${onnxruntime_SOURCE_DIR}/include")
     target_link_libraries(ChopPlugin PRIVATE "${onnxruntime_SOURCE_DIR}/lib/onnxruntime.lib")
-    target_link_options(ChopPlugin PRIVATE "/DELAYLOAD:onnxruntime.dll" "delayimp.lib")
+    target_link_options(ChopPlugin PUBLIC "/DELAYLOAD:onnxruntime.dll" "delayimp.lib")
 
     if(TARGET ChopPlugin_Standalone)
         add_custom_command(TARGET ChopPlugin_Standalone POST_BUILD
