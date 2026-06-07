@@ -11,16 +11,27 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     titleLabel.setText ("CHOP", juce::dontSendNotification);
     titleLabel.setFont (juce::Font (juce::FontOptions (20.0f).withStyle ("Bold")));
     titleLabel.setColour (juce::Label::textColourId, juce::Colour (0xffe0a458));
+    titleLabel.setTitle ("Chop Sample Browser Title");
+    titleLabel.setDescription ("Application Header");
     addAndMakeVisible (titleLabel);
 
     searchBox.setTextToShowWhenEmpty ("Search samples, e.g. punchy techno kick",
                                       juce::Colours::white.withAlpha (0.4f));
     searchBox.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff202024));
     searchBox.onReturnKey = [this] { doSearch(); };
+    searchBox.setTitle ("Search Text Field");
+    searchBox.setDescription ("Enter search keywords or semantic descriptions to search the library");
+    searchBox.setHelpText ("Press Enter to execute the search");
     addAndMakeVisible (searchBox);
 
     searchButton.onClick = [this] { doSearch(); };
+    searchButton.setTitle ("Search Button");
+    searchButton.setDescription ("Executes text or semantic search depending on toggle state");
+
     stopButton.onClick   = [this] { processorRef.stopAudition(); setStatus ("Stopped"); };
+    stopButton.setTitle ("Stop Button");
+    stopButton.setDescription ("Stops auditioning/playing back the selected sample");
+
     addAndMakeVisible (searchButton);
     addAndMakeVisible (stopButton);
 
@@ -33,6 +44,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     };
     semanticSearchToggle.setColour (juce::ToggleButton::textColourId, juce::Colours::white.withAlpha (0.9f));
     semanticSearchToggle.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe0a458));
+    semanticSearchToggle.setTitle ("AI Search Toggle");
+    semanticSearchToggle.setDescription ("Enable to run an AI-based semantic search instead of classic keyword matching");
     addAndMakeVisible (semanticSearchToggle);
 
     for (const auto& tag : tags)
@@ -47,6 +60,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
             doSearch();
             updateTagHighlighting (tag);
         };
+        btn->setTitle (tag + " Tag Button");
+        btn->setDescription ("Filters search results to only show samples tagged with " + tag);
         addAndMakeVisible (*btn);
         tagButtons.push_back (std::move (btn));
     }
@@ -62,6 +77,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     genHeaderLabel.setText ("GENERATION SETUP", juce::dontSendNotification);
     genHeaderLabel.setFont (juce::Font (juce::FontOptions (13.0f).withStyle ("Bold")));
     genHeaderLabel.setColour (juce::Label::textColourId, juce::Colour (0xff19c3b3));
+    genHeaderLabel.setTitle ("Generation Setup Header");
+    genHeaderLabel.setDescription ("Provides controls to configure and generate AI samples using Stable Audio");
     addAndMakeVisible (genHeaderLabel);
 
     sectionHeader (promptHeaderLabel, "TEXT PROMPT");
@@ -72,6 +89,9 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     promptEditor.setTextToShowWhenEmpty ("Describe the sound…", juce::Colours::white.withAlpha (0.35f));
     promptEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff202024));
     promptEditor.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff34343c));
+    promptEditor.setTitle ("Text Prompt Editor");
+    promptEditor.setDescription ("Type text description of the sound to generate");
+    promptEditor.setHelpText ("e.g. warm analog bass");
     addAndMakeVisible (promptEditor);
 
     sectionHeader (durationHeaderLabel, "MAX DURATION");
@@ -88,6 +108,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
         durationValueLabel.setText (juce::String (durationSlider.getValue(), 1) + "s",
                                     juce::dontSendNotification);
     };
+    durationSlider.setTitle ("Max Duration Slider");
+    durationSlider.setDescription ("Adjusts the maximum duration of the generated sample in seconds");
     addAndMakeVisible (durationSlider);
 
     durationValueLabel.setText ("8.0s", juce::dontSendNotification);
@@ -99,15 +121,21 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     generateSoundButton.onClick = [this] { doGenerate(); };
     generateSoundButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff19c3b3));
     generateSoundButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff0b1f1d));
+    generateSoundButton.setTitle ("Generate Sound Button");
+    generateSoundButton.setDescription ("Triggers AI stable audio sample generation with the specified prompt and duration");
     addAndMakeVisible (generateSoundButton);
 
     // Audio visualizer — a live waveform of whatever is being auditioned.
     sectionHeader (visualizerHeaderLabel, "NOW PLAYING");
+    visualizerHeaderLabel.setTitle ("Now Playing Waveform Visualizer");
+    visualizerHeaderLabel.setDescription ("Displays the real-time waveform of the currently playing or auditioned audio sample");
     addAndMakeVisible (visualizerHeaderLabel);
     addAndMakeVisible (processorRef.getVisualiser());
 
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.6f));
     statusLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
+    statusLabel.setTitle ("Status Label");
+    statusLabel.setDescription ("Displays status information such as generation or search progress");
     addAndMakeVisible (statusLabel);
 
     list = std::make_unique<SampleListBox> (processorRef);
@@ -125,12 +153,16 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
         }
     };
     list->onStatus = [this] (const juce::String& s) { setStatus (s); };
+    list->setTitle ("Sample list");
+    list->setDescription ("Displays the list of matched local and generated samples");
     addAndMakeVisible (*list);
 
     // Setup local library browser components
     selectFolderButton.onClick = [this] { selectLibraryFolder(); };
     selectFolderButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff202024));
     selectFolderButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    selectFolderButton.setTitle ("Select Folder Button");
+    selectFolderButton.setDescription ("Opens a folder chooser to select a local directory containing audio files");
     addAndMakeVisible (selectFolderButton);
 
     refreshButton.onClick = [this] {
@@ -139,6 +171,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     };
     refreshButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff202024));
     refreshButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    refreshButton.setTitle ("Refresh Button");
+    refreshButton.setDescription ("Triggers a manual scan of the current directory to refresh the list of local files");
     addAndMakeVisible (refreshButton);
 
     fileTree.setColour (juce::TreeView::backgroundColourId, juce::Colour (0xff161619));
@@ -149,6 +183,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
 
     fileTree.addListener (this);
     fileTree.setDragAndDropDescription ("ChopLocalFile");
+    fileTree.setTitle ("Local library folder tree");
+    fileTree.setDescription ("Displays directory structure of the loaded local samples folder, allowing selection of folders to display");
     addAndMakeVisible (fileTree);
 
     fileScannerThread.startThread();
@@ -213,7 +249,9 @@ void ChopAudioProcessorEditor::doSearch()
     }
 
     list->setSamples (matchedSamples);
-    setStatus ("Found " + juce::String (matchedSamples.size()) + " sample(s)");
+    juce::String searchResult = "Found " + juce::String (matchedSamples.size()) + " sample(s)";
+    setStatus (searchResult);
+    juce::AccessibilityHandler::postAnnouncement ("Search completed. " + searchResult, juce::AccessibilityHandler::AnnouncementPriority::high);
 }
 
 juce::File ChopAudioProcessorEditor::getGeneratedFolder() const
@@ -374,10 +412,14 @@ void ChopAudioProcessorEditor::timerCallback()
     else if (wasScanningLastCheck)
     {
         const int count = processorRef.getLibraryScannedCount();
+        juce::String readyMsg = "Library ready. " + juce::String (count) + " samples indexed.";
         if (modelMgr.isModelLoaded())
-            setStatus ("Library ready. " + juce::String (count) + " samples indexed with AI Search.");
+            readyMsg += " AI Search enabled.";
         else
-            setStatus ("Library ready. " + juce::String (count) + " samples indexed (AI Search disabled).");
+            readyMsg += " AI Search disabled.";
+
+        setStatus (readyMsg);
+        juce::AccessibilityHandler::postAnnouncement (readyMsg, juce::AccessibilityHandler::AnnouncementPriority::high);
         wasScanningLastCheck = false;
     }
 }

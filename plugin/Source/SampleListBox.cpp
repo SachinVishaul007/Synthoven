@@ -14,6 +14,15 @@ namespace
             row = newRow;
             sample = s;
             selected = isSelected;
+            
+            setTitle (s.name);
+            juce::String desc = s.subtitle();
+            if (s.bpm > 0) desc << ", " << juce::String (s.bpm) << " BPM";
+            desc << ", duration " << s.durationText();
+            if (isSelected) desc << ", selected";
+            setDescription (desc);
+            setAccessible (true);
+            
             repaint();
         }
 
