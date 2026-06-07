@@ -26,3 +26,6 @@ logs/
 *.env
 .env
 application-local.properties
+
+# Local DB
+data/
