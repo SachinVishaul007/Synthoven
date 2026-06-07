@@ -1,11 +1,27 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#if JUCE_WINDOWS
+#include <windows.h>
+#endif
+
 ChopAudioProcessor::ChopAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true))
 {
+#if JUCE_WINDOWS
+    // Explicitly load onnxruntime.dll from the folder containing this binary.
+    // This resolves the Windows dynamic library loader search order issue inside DAWs.
+    auto currentExe = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+    auto dllFolder = currentExe.getParentDirectory();
+    auto onnxDll = dllFolder.getChildFile("onnxruntime.dll");
+    if (onnxDll.existsAsFile())
+    {
+        LoadLibraryW(onnxDll.getFullPathName().toWideCharPointer());
+    }
+#endif
+
     formatManager.registerBasicFormats(); // WAV + AIFF always; FLAC/Ogg if enabled in the build
     readAheadThread.startThread();
     loadEmbeddingCache();
