@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import './styles/global.css';
 import { Sidebar } from './components/layout/Sidebar';
 import { TopBar } from './components/layout/TopBar';
@@ -9,11 +9,40 @@ import { usePlayer } from './hooks/usePlayer';
 import { api } from './api/client';
 import { mapSamples } from './api/mapper';
 
+const SECTION_FETCHERS = {
+  library:   { fetch: api.getLibrarySamples,   label: 'Library' },
+  packs:     { fetch: api.getAllSamples,        label: 'All samples' },
+  favorites: { fetch: api.getFavorites,         label: 'Favorites' },
+  generated: { fetch: api.getGeneratedSamples,  label: 'Generated' },
+  recent:    { fetch: api.getRecent,            label: 'Recent' },
+};
+
 export default function App() {
   const [activeSection, setActiveSection] = useState('library');
   const [isImporting, setIsImporting] = useState(false);
   const search = useSearch();
   const player = usePlayer();
+  const { showSamples } = search;
+
+  // Load a sidebar section's persisted samples from the backend and display them.
+  const loadSection = useCallback(async (section) => {
+    const cfg = SECTION_FETCHERS[section] || SECTION_FETCHERS.library;
+    try {
+      const samples = await cfg.fetch();
+      showSamples(mapSamples(samples), cfg.label);
+    } catch (err) {
+      console.error(`Failed to load ${section}:`, err.message);
+      showSamples([], `failed to load ${section} — ${err.message}`);
+    }
+  }, [showSamples]);
+
+  // On first load, show whatever is already in the library (survives refresh).
+  useEffect(() => { loadSection('library'); }, [loadSection]);
+
+  const handleNavigate = (section) => {
+    setActiveSection(section);
+    loadSection(section);
+  };
 
   const handlePlay = (sample) => {
     player.toggle(sample);
@@ -57,7 +86,7 @@ export default function App() {
     }}>
       <Sidebar
         activeSection={activeSection}
-        onNavigate={setActiveSection}
+        onNavigate={handleNavigate}
       />
 
       <div style={{
