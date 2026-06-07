@@ -1,30 +1,11 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_gui_extra/juce_gui_extra.h>
 #include "PluginProcessor.h"
-#include "SampleListBox.h"
-
-class FoldersOnlyFilter : public juce::FileFilter
-{
-public:
-    FoldersOnlyFilter() : juce::FileFilter ("Folders Only") {}
-
-    bool isFileSuitable (const juce::File& file) const override
-    {
-        return file.isDirectory();
-    }
-
-    bool isDirectorySuitable (const juce::File& folder) const override
-    {
-        juce::ignoreUnused (folder);
-        return true;
-    }
-};
 
 class ChopAudioProcessorEditor : public juce::AudioProcessorEditor,
-                                 public juce::FileBrowserListener,
-                                 public juce::DragAndDropContainer,
-                                 private juce::Timer
+                                 public juce::DragAndDropContainer
 {
 public:
     explicit ChopAudioProcessorEditor (ChopAudioProcessor&);
@@ -33,51 +14,14 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
-    // ── FileBrowserListener methods ────────────────────────────────────────
-    void selectionChanged() override {}
-    void fileClicked (const juce::File& file, const juce::MouseEvent& e) override;
-    void fileDoubleClicked (const juce::File& file) override {}
-    void browserRootChanged (const juce::File& newRoot) override {}
-
-    // ── DragAndDropContainer methods ───────────────────────────────────────
-    bool shouldDropFilesWhenDraggedExternally (const juce::DragAndDropTarget::SourceDetails& sourceDetails,
-                                               juce::StringArray& files, bool& canMoveFiles) override;
-
 private:
-    void doSearch();
-    void loadLocalFolder (const juce::File& folder);
-    void setStatus (const juce::String& text);
-    void timerCallback() override;
-
     void selectLibraryFolder();
     void setLibraryFolder (const juce::File& folder);
 
     ChopAudioProcessor& processorRef;
 
-    juce::TextEditor  searchBox;
-    juce::TextButton  searchButton  { "Search" };
-    juce::TextButton  stopButton    { "Stop" };
-    juce::ToggleButton semanticSearchToggle { "AI Search" };
-
-    std::vector<std::unique_ptr<juce::TextButton>> tagButtons;
-    std::vector<juce::String> tags = { "Happy", "Dark", "Sad", "Energetic", "Ambient", "Cinematic", "Punchy" };
-    void updateTagHighlighting (const juce::String& activeTag);
-
-    juce::Label       titleLabel;
-    juce::Label       statusLabel;
-
-    // Local library browser components
-    juce::TextButton  selectFolderButton { "Select Folder..." };
-    juce::TextButton  refreshButton      { "Refresh" };
-    FoldersOnlyFilter folderFilter;
-    juce::TimeSliceThread fileScannerThread;
-    juce::DirectoryContentsList directoryList;
-    juce::FileTreeComponent fileTree;
-
-    std::unique_ptr<SampleListBox>   list;
+    std::unique_ptr<juce::WebBrowserComponent> webView;
     std::unique_ptr<juce::FileChooser> chooser;
-
-    bool wasScanningLastCheck = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChopAudioProcessorEditor)
 };

@@ -76,6 +76,31 @@ export default function App() {
     }
   };
 
+  const [juceStatus, setJuceStatus] = useState(null);
+
+  useEffect(() => {
+    const isJuce = typeof window !== 'undefined' && window.__JUCE__ !== undefined;
+    if (!isJuce) return;
+
+    let wasScanning = false;
+    const interval = setInterval(async () => {
+      try {
+        const status = await window.__JUCE__.backend.getLibraryStatus();
+        setJuceStatus(status);
+        setIsImporting(status.isScanning);
+
+        if (wasScanning && !status.isScanning) {
+          loadSection('library');
+        }
+        wasScanning = status.isScanning;
+      } catch (err) {
+        console.error('Failed to get JUCE library status:', err);
+      }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [loadSection]);
+
   return (
     <div style={{
       display: 'flex',
@@ -106,6 +131,37 @@ export default function App() {
           onImportFolder={handleImportFolder}
           isImporting={isImporting}
         />
+
+        {juceStatus && (juceStatus.isScanning || (juceStatus.modelStatusMessage && !juceStatus.isModelLoaded)) && (
+          <div style={{
+            padding: '8px 20px',
+            fontSize: '11px',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-secondary)',
+            background: 'var(--bg-elevated)',
+            borderBottom: '1px solid var(--border-subtle)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            animation: 'fadeIn 0.3s ease-out',
+          }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span className="pulse-dot" style={{
+                width: 6, height: 6, borderRadius: '50%',
+                background: juceStatus.isScanning ? '#f0a350' : '#4caf50',
+                display: 'inline-block'
+              }}/>
+              {juceStatus.modelStatusMessage && !juceStatus.isModelLoaded
+                ? `🤖 AI Model: ${juceStatus.modelStatusMessage}`
+                : `📂 Library: Indexing audio files...`}
+            </span>
+            {juceStatus.isScanning && juceStatus.embeddingTotalCount > 0 && (
+              <span style={{ color: 'var(--text-tertiary)' }}>
+                {juceStatus.embeddingIndexedCount} / {juceStatus.embeddingTotalCount} files indexed
+              </span>
+            )}
+          </div>
+        )}
 
         {search.error && (
           <div style={{

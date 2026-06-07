@@ -28,6 +28,19 @@ export function TopBar({ query, onChange, onSearch, onClear, hasSearched, submit
     onImportFolder?.(audio, folderName, all.length);
   };
 
+  const handleImportClick = () => {
+    const isJuce = typeof window !== 'undefined' && window.__JUCE__ !== undefined;
+    if (isJuce) {
+      try {
+        window.__JUCE__.backend.selectLibraryFolder();
+      } catch (err) {
+        console.error('JUCE selectLibraryFolder error:', err);
+      }
+      return;
+    }
+    folderInputRef.current?.click();
+  };
+
   return (
     <div style={{
       height: 'var(--topbar-height)',
@@ -62,7 +75,7 @@ export function TopBar({ query, onChange, onSearch, onClear, hasSearched, submit
           style={{ display: 'none' }}
         />
         <button
-          onClick={() => folderInputRef.current?.click()}
+          onClick={handleImportClick}
           disabled={isImporting}
           style={{
             height: 32, borderRadius: 'var(--r-md)', padding: '0 12px', gap: '6px',

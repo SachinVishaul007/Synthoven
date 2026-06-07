@@ -35,6 +35,7 @@ juce_add_plugin(ChopPlugin
     NEEDS_MIDI_OUTPUT       FALSE
     IS_MIDI_EFFECT          FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS TRUE
+    NEEDS_WEBVIEW2          TRUE
     COPY_PLUGIN_AFTER_BUILD TRUE)
 
 target_sources(ChopPlugin PRIVATE
@@ -47,7 +48,9 @@ target_sources(ChopPlugin PRIVATE
     Source/ClapModelManager.cpp)
 
 target_compile_definitions(ChopPlugin PUBLIC
-    JUCE_WEB_BROWSER=0
+    JUCE_WEB_BROWSER=1
+    JUCE_USE_WIN_WEBVIEW2=1
+    FRONTEND_DIST_DIR="\\"${CMAKE_CURRENT_SOURCE_DIR}/../frontend/dist\\""
     # On Linux, set JUCE_USE_CURL=1 and link curl for networking. macOS/Windows
     # use native networking, so curl is not required there.
     JUCE_USE_CURL=0

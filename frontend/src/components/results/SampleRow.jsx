@@ -20,6 +20,18 @@ export function SampleRow({ sample, isPlaying, onPlay, onSave }) {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  const handleDragStart = (e) => {
+    const isJuce = typeof window !== 'undefined' && window.__JUCE__ !== undefined;
+    if (isJuce && sample.filePath) {
+      e.preventDefault();
+      try {
+        window.__JUCE__.backend.dragSample(sample.filePath);
+      } catch (err) {
+        console.error('JUCE dragSample error:', err);
+      }
+    }
+  };
+
   const accent      = isLib ? 'var(--accent-amber)'        : 'var(--accent-gen)';
   const accentGlow  = isLib ? 'var(--accent-amber-glow)'   : 'var(--accent-gen-glow)';
   const accentBorder= isLib ? 'var(--accent-amber-border)' : 'var(--accent-gen-border)';
@@ -29,6 +41,8 @@ export function SampleRow({ sample, isPlaying, onPlay, onSave }) {
       onClick={() => onPlay(sample)}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      draggable="true"
+      onDragStart={handleDragStart}
       style={{
         display: 'grid',
         gridTemplateColumns: '32px 1fr 56px 80px auto',

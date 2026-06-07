@@ -25,10 +25,21 @@ export function usePlayer() {
   }, []);
 
   const play = useCallback((sample) => {
-    const audio = audioRef.current;
+    const isJuce = typeof window !== 'undefined' && window.__JUCE__ !== undefined;
     setCurrentSample(sample);
     setPlaying(sample.id);
 
+    if (isJuce) {
+      try {
+        window.__JUCE__.backend.playSample(sample.filePath);
+      } catch (err) {
+        console.error('JUCE playSample error:', err);
+        setPlaying(null);
+      }
+      return;
+    }
+
+    const audio = audioRef.current;
     if (audio) {
       const url = api.streamUrl(sample.id);
       // Only reload (and re-record a play) when switching samples; otherwise
@@ -42,6 +53,17 @@ export function usePlayer() {
   }, []);
 
   const stop = useCallback(() => {
+    const isJuce = typeof window !== 'undefined' && window.__JUCE__ !== undefined;
+    if (isJuce) {
+      try {
+        window.__JUCE__.backend.stopAudition();
+      } catch (err) {
+        console.error('JUCE stopAudition error:', err);
+      }
+      setPlaying(null);
+      return;
+    }
+
     const audio = audioRef.current;
     if (audio) audio.pause();
     setPlaying(null);
