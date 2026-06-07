@@ -45,6 +45,8 @@ public:
 
 private:
     void doSearch();
+    void doGenerate();
+    juce::File getGeneratedFolder() const;
     void loadLocalFolder (const juce::File& folder);
     void setStatus (const juce::String& text);
     void timerCallback() override;
@@ -65,6 +67,21 @@ private:
 
     juce::Label       titleLabel;
     juce::Label       statusLabel;
+
+    // ── Generation setup panel (right) ─────────────────────────────────────
+    juce::Label       genHeaderLabel;
+    juce::Label       promptHeaderLabel;
+    juce::TextEditor  promptEditor;
+    juce::Label       categoryHeaderLabel;
+    juce::ComboBox    categoryCombo;
+    juce::Label       durationHeaderLabel;
+    juce::Slider      durationSlider;
+    juce::Label       durationValueLabel;
+    juce::Label       creativityHeaderLabel;
+    juce::Slider      creativitySlider;
+    juce::TextButton  generateSoundButton { "GENERATE SOUND" };
+
+    juce::StringArray categoryHints; // parallel to categoryCombo items
 
     // Local library browser components
     juce::TextButton  selectFolderButton { "Select Folder..." };

@@ -114,6 +114,76 @@ void ChopApiClient::getGenerationJob (const juce::String& jobId, JobCallback cb)
     });
 }
 
+void ChopApiClient::generate (const juce::String& prompt, double durationSeconds, double cfgScale,
+                              const juce::String& category, JobCallback cb)
+{
+    auto base = baseUrl;
+    runAsync (pool, [base, prompt, durationSeconds, cfgScale, category, cb]
+    {
+        juce::String error;
+        JobResult result;
+
+        // 1) Start the job.
+        auto* body = new juce::DynamicObject();
+        body->setProperty ("prompt", prompt);
+        if (durationSeconds > 0.0) body->setProperty ("durationSeconds", durationSeconds);
+        if (cfgScale > 0.0)        body->setProperty ("cfgScale", cfgScale);
+        if (category.isNotEmpty()) body->setProperty ("category", category);
+        auto json = juce::JSON::toString (juce::var (body));
+
+        auto startUrl = juce::URL (base + "/api/generation").withPOSTData (json);
+        auto startOpts = juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inPostData)
+                             .withConnectionTimeoutMs (15000)
+                             .withExtraHeaders ("Content-Type: application/json");
+
+        juce::String jobId;
+        if (auto stream = startUrl.createInputStream (startOpts))
+        {
+            auto parsed = juce::JSON::parse (stream->readEntireStreamAsString());
+            if (auto* o = parsed.getDynamicObject())
+                jobId = o->getProperty ("jobId").toString();
+        }
+
+        if (jobId.isEmpty())
+        {
+            error = "Could not start generation at " + base;
+            juce::MessageManager::callAsync ([cb, result, error] { cb (result, error); });
+            return;
+        }
+
+        // 2) Poll until the job reaches a terminal state.
+        const auto jobUrl = juce::URL (base + "/api/generation/"
+                                       + juce::URL::addEscapeChars (jobId, false));
+        for (int attempt = 0; attempt < 90; ++attempt)
+        {
+            juce::Thread::sleep (1500);
+
+            if (auto stream = openGet (jobUrl))
+            {
+                auto parsed = juce::JSON::parse (stream->readEntireStreamAsString());
+                if (auto* o = parsed.getDynamicObject())
+                {
+                    result.status  = o->getProperty ("status").toString();
+                    result.error   = o->getProperty ("error").toString();
+                    result.samples = Sample::arrayFromVar (o->getProperty ("samples"));
+
+                    if (result.status == "complete" || result.status == "failed")
+                    {
+                        if (result.status == "failed")
+                            error = result.error.isNotEmpty() ? result.error : "Generation failed";
+                        break;
+                    }
+                }
+            }
+
+            if (attempt == 89)
+                error = "Generation timed out";
+        }
+
+        juce::MessageManager::callAsync ([cb, result, error] { cb (result, error); });
+    });
+}
+
 void ChopApiClient::getSamples (const juce::String& path, SamplesCallback cb)
 {
     auto base = baseUrl;

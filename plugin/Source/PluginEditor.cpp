@@ -51,6 +51,93 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
         tagButtons.push_back (std::move (btn));
     }
 
+    // ── Generation setup panel ─────────────────────────────────────────────
+    auto sectionHeader = [] (juce::Label& l, const juce::String& text)
+    {
+        l.setText (text, juce::dontSendNotification);
+        l.setFont (juce::Font (juce::FontOptions (11.0f).withStyle ("Bold")));
+        l.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.45f));
+    };
+
+    genHeaderLabel.setText ("GENERATION SETUP", juce::dontSendNotification);
+    genHeaderLabel.setFont (juce::Font (juce::FontOptions (13.0f).withStyle ("Bold")));
+    genHeaderLabel.setColour (juce::Label::textColourId, juce::Colour (0xff19c3b3));
+    addAndMakeVisible (genHeaderLabel);
+
+    sectionHeader (promptHeaderLabel, "TEXT PROMPT");
+    addAndMakeVisible (promptHeaderLabel);
+
+    promptEditor.setMultiLine (true, true);
+    promptEditor.setReturnKeyStartsNewLine (true);
+    promptEditor.setTextToShowWhenEmpty ("Describe the sound…", juce::Colours::white.withAlpha (0.35f));
+    promptEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff202024));
+    promptEditor.setColour (juce::TextEditor::outlineColourId, juce::Colour (0xff34343c));
+    addAndMakeVisible (promptEditor);
+
+    sectionHeader (categoryHeaderLabel, "CATEGORY");
+    addAndMakeVisible (categoryHeaderLabel);
+
+    // Display text + the prompt hint we send to the backend (parallel arrays).
+    struct Cat { const char* label; const char* hint; };
+    static const Cat cats[] = {
+        { "Drums - One Shot",  "drum one shot, percussive hit" },
+        { "Bass - One Shot",   "bass one shot" },
+        { "Melodic Loop",      "melodic loop" },
+        { "Pad / Texture",     "ambient pad texture" },
+        { "FX / Riser",        "sound effect, riser transition" },
+        { "Vocal Chop",        "vocal chop" },
+        { "Any / Custom",      "" }
+    };
+    for (int i = 0; i < (int) (sizeof (cats) / sizeof (Cat)); ++i)
+    {
+        categoryCombo.addItem (cats[i].label, i + 1);
+        categoryHints.add (cats[i].hint);
+    }
+    categoryCombo.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff202024));
+    categoryCombo.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xff34343c));
+    categoryCombo.setSelectedId (1, juce::dontSendNotification);
+    addAndMakeVisible (categoryCombo);
+
+    sectionHeader (durationHeaderLabel, "MAX DURATION");
+    addAndMakeVisible (durationHeaderLabel);
+
+    durationSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    durationSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+    durationSlider.setRange (1.0, 30.0, 0.1);
+    durationSlider.setValue (8.0, juce::dontSendNotification);
+    durationSlider.setColour (juce::Slider::trackColourId, juce::Colour (0xff19c3b3));
+    durationSlider.setColour (juce::Slider::thumbColourId, juce::Colour (0xff19c3b3));
+    durationSlider.onValueChange = [this]
+    {
+        durationValueLabel.setText (juce::String (durationSlider.getValue(), 1) + "s",
+                                    juce::dontSendNotification);
+    };
+    addAndMakeVisible (durationSlider);
+
+    durationValueLabel.setText ("8.0s", juce::dontSendNotification);
+    durationValueLabel.setFont (juce::Font (juce::FontOptions (12.0f).withStyle ("Bold")));
+    durationValueLabel.setColour (juce::Label::textColourId, juce::Colour (0xff19c3b3));
+    durationValueLabel.setJustificationType (juce::Justification::centredRight);
+    addAndMakeVisible (durationValueLabel);
+
+    sectionHeader (creativityHeaderLabel, "CREATIVITY / VARIATION");
+    addAndMakeVisible (creativityHeaderLabel);
+
+    creativitySlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    creativitySlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 50, 24);
+    creativitySlider.setRange (0.0, 100.0, 1.0);
+    creativitySlider.setValue (75.0, juce::dontSendNotification);
+    creativitySlider.setTextValueSuffix (" %");
+    creativitySlider.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xff19c3b3));
+    creativitySlider.setColour (juce::Slider::textBoxTextColourId, juce::Colours::white.withAlpha (0.8f));
+    creativitySlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
+    addAndMakeVisible (creativitySlider);
+
+    generateSoundButton.onClick = [this] { doGenerate(); };
+    generateSoundButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff19c3b3));
+    generateSoundButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff0b1f1d));
+    addAndMakeVisible (generateSoundButton);
+
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.6f));
     statusLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
     addAndMakeVisible (statusLabel);
@@ -118,7 +205,7 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     }
 
     startTimer (100);
-    setSize (1000, 540);
+    setSize (1180, 560);
 }
 
 ChopAudioProcessorEditor::~ChopAudioProcessorEditor()
@@ -161,6 +248,66 @@ void ChopAudioProcessorEditor::doSearch()
     setStatus ("Found " + juce::String (matchedSamples.size()) + " sample(s)");
 }
 
+juce::File ChopAudioProcessorEditor::getGeneratedFolder() const
+{
+    // Mirrors the backend default chop.generation.output-path (~/Music/Chop/Generated).
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory)
+               .getChildFile ("Chop")
+               .getChildFile ("Generated");
+}
+
+void ChopAudioProcessorEditor::doGenerate()
+{
+    const auto prompt = promptEditor.getText().trim();
+    if (prompt.isEmpty())
+    {
+        setStatus ("Describe the sound first, e.g. \"warm analog bass\"");
+        return;
+    }
+
+    const double duration = durationSlider.getValue();
+    // Creativity 0–100% → CFG scale 5.0 (strict) … 1.0 (loose/creative).
+    const double creativity = creativitySlider.getValue();
+    const double cfgScale = 1.0 + (1.0 - creativity / 100.0) * 4.0;
+
+    const int catIndex = categoryCombo.getSelectedId() - 1;
+    const juce::String category = juce::isPositiveAndBelow (catIndex, categoryHints.size())
+                                    ? categoryHints[catIndex] : juce::String();
+
+    setStatus ("Generating \"" + prompt + "\" (" + juce::String (duration, 1)
+               + "s)… this can take a little while");
+    generateSoundButton.setEnabled (false);
+
+    juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
+    processorRef.getApiClient().generate (prompt, duration, cfgScale, category,
+        [safe, prompt] (ChopApiClient::JobResult result, juce::String error)
+    {
+        if (safe == nullptr)
+            return;
+
+        safe->generateSoundButton.setEnabled (true);
+
+        if (error.isNotEmpty())
+        {
+            safe->setStatus ("Generation failed: " + error);
+            return;
+        }
+
+        // The backend saved the new audio into the Generated folder; show that
+        // folder so the fresh files appear and can be auditioned / dragged to a DAW.
+        auto folder = safe->getGeneratedFolder();
+        if (folder.isDirectory())
+        {
+            safe->directoryList.setDirectory (folder, true, false);
+            safe->loadLocalFolder (folder);
+            safe->processorRef.triggerLibraryScan();
+        }
+
+        safe->setStatus ("Generated " + juce::String (result.samples.size())
+                         + " sample(s) for \"" + prompt + "\" → " + folder.getFullPathName());
+    });
+}
+
 
 void ChopAudioProcessorEditor::paint (juce::Graphics& g)
 {
@@ -176,10 +323,12 @@ void ChopAudioProcessorEditor::resized()
 
     area.removeFromBottom (4); // minor spacer
 
-    // Now divide the remaining space into left browser pane and right main pane
+    // Three columns: folder browser (left) | results (centre) | generation (right)
     auto leftPane = area.removeFromLeft (240);
-    area.removeFromLeft (12); // spacer between panes
-    auto rightPane = area;
+    area.removeFromLeft (12); // spacer
+    auto genPanel = area.removeFromRight (270);
+    area.removeFromRight (12); // spacer
+    auto centrePane = area;
 
     // Left pane layout
     auto buttonRow = leftPane.removeFromTop (28);
@@ -189,31 +338,51 @@ void ChopAudioProcessorEditor::resized()
     leftPane.removeFromTop (8); // spacer
     fileTree.setBounds (leftPane);
 
-    // Right pane layout
-    // Top bar: title + search + stop buttons + AI toggle
-    auto top = rightPane.removeFromTop (32);
+    // Centre pane: top bar (title + search + AI toggle + stop), tag row, results list
+    auto top = centrePane.removeFromTop (32);
     titleLabel.setBounds (top.removeFromLeft (70));
-    stopButton.setBounds (top.removeFromRight (60).reduced (2, 0));
-    searchButton.setBounds (top.removeFromRight (74).reduced (2, 0));
+    stopButton.setBounds (top.removeFromRight (56).reduced (2, 0));
+    searchButton.setBounds (top.removeFromRight (66).reduced (2, 0));
     semanticSearchToggle.setBounds (top.removeFromRight (85).reduced (2, 0));
     searchBox.setBounds (top.reduced (2, 0));
-
-    rightPane.removeFromTop (8); // spacer
+    centrePane.removeFromTop (8); // spacer
 
     // Tag buttons row
-    auto tagRow = rightPane.removeFromTop (28);
-    int btnWidth = 75;
-    int spacing = 6;
+    auto tagRow = centrePane.removeFromTop (28);
     for (auto& btn : tagButtons)
     {
-        btn->setBounds (tagRow.removeFromLeft (btnWidth));
-        tagRow.removeFromLeft (spacing);
+        btn->setBounds (tagRow.removeFromLeft (75));
+        tagRow.removeFromLeft (6);
     }
+    centrePane.removeFromTop (8); // spacer
 
-    rightPane.removeFromTop (8); // spacer
+    list->setBounds (centrePane);
 
-    // List fills the rest of the right pane
-    list->setBounds (rightPane);
+    // Right pane: generation setup panel
+    genHeaderLabel.setBounds (genPanel.removeFromTop (22));
+    genPanel.removeFromTop (8);
+
+    promptHeaderLabel.setBounds (genPanel.removeFromTop (16));
+    promptEditor.setBounds (genPanel.removeFromTop (110));
+    genPanel.removeFromTop (12);
+
+    categoryHeaderLabel.setBounds (genPanel.removeFromTop (16));
+    categoryCombo.setBounds (genPanel.removeFromTop (28));
+    genPanel.removeFromTop (12);
+
+    durationHeaderLabel.setBounds (genPanel.removeFromTop (16));
+    {
+        auto durRow = genPanel.removeFromTop (24);
+        durationValueLabel.setBounds (durRow.removeFromRight (52));
+        durationSlider.setBounds (durRow);
+    }
+    genPanel.removeFromTop (12);
+
+    creativityHeaderLabel.setBounds (genPanel.removeFromTop (16));
+    creativitySlider.setBounds (genPanel.removeFromTop (60));
+    genPanel.removeFromTop (16);
+
+    generateSoundButton.setBounds (genPanel.removeFromTop (40));
 }
 
 void ChopAudioProcessorEditor::timerCallback()

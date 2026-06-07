@@ -26,3 +26,6 @@ logs/
 *.env
 .env
 application-local.properties
+
+# Local launch script holding the Stability API key
+run-stableaudio.sh

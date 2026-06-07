@@ -41,6 +41,15 @@ public:
     /** GET /api/generation/{jobId}. */
     void getGenerationJob (const juce::String& jobId, JobCallback cb);
 
+    /**
+     * POST /api/generation then poll until the job finishes. Delivers the final
+     * JobResult (complete/failed) on the message thread. One call = prompt in,
+     * generated samples out. durationSeconds/cfgScale tune the local Stable Audio
+     * provider; category is an optional hint prepended to the prompt.
+     */
+    void generate (const juce::String& prompt, double durationSeconds, double cfgScale,
+                   const juce::String& category, JobCallback cb);
+
     /** GET an endpoint returning a SampleDto[] (e.g. "/api/library/samples/library"). */
     void getSamples (const juce::String& path, SamplesCallback cb);
 

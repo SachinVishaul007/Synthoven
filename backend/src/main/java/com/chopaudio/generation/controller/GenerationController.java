@@ -26,7 +26,9 @@ public class GenerationController {
     /** Start a generation job; returns immediately with a job id to poll. */
     @PostMapping
     public ResponseEntity<GenerationJobDto> startJob(@Valid @RequestBody GenerationRequest request) {
-        GenerationJobDto job = generationService.startJob(request.prompt(), request.count());
+        GenerationJobDto job = generationService.startJob(
+                request.prompt(), request.count(),
+                request.durationSeconds(), request.cfgScale(), request.category());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(job);
     }
 

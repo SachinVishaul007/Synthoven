@@ -1,7 +1,9 @@
 package com.chopaudio.generation.service;
 
 import com.chopaudio.common.exception.ResourceNotFoundException;
+import com.chopaudio.generation.client.LocalStableAudioClient;
 import com.chopaudio.generation.client.MockGenerationClient;
+import com.chopaudio.generation.client.StableAudioClient;
 import com.chopaudio.generation.client.SunoClient;
 import com.chopaudio.generation.dto.GenerationJobDto;
 import com.chopaudio.library.dto.SampleDto;
@@ -18,6 +20,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -38,6 +41,9 @@ public class GenerationService {
 
     private final MockGenerationClient mockClient;
     private final SunoClient sunoClient;
+    private final StableAudioClient stableAudioClient;
+    private final LocalStableAudioClient localStableAudioClient;
+    private final GeneratedFileStore fileStore;
     private final SampleRepository sampleRepository;
     private final SampleMapper mapper;
     private final Executor executor;
@@ -47,12 +53,18 @@ public class GenerationService {
 
     public GenerationService(MockGenerationClient mockClient,
                              SunoClient sunoClient,
+                             StableAudioClient stableAudioClient,
+                             LocalStableAudioClient localStableAudioClient,
+                             GeneratedFileStore fileStore,
                              SampleRepository sampleRepository,
                              SampleMapper mapper,
                              @Qualifier("taskExecutor") Executor executor,
                              @Value("${chop.generation.provider}") String activeProvider) {
         this.mockClient = mockClient;
         this.sunoClient = sunoClient;
+        this.stableAudioClient = stableAudioClient;
+        this.localStableAudioClient = localStableAudioClient;
+        this.fileStore = fileStore;
         this.sampleRepository = sampleRepository;
         this.mapper = mapper;
         this.executor = executor;
@@ -61,7 +73,7 @@ public class GenerationService {
 
     @PostConstruct
     void logProvider() {
-        if (!"mock".equals(activeProvider) && !"suno".equals(activeProvider)) {
+        if (!Set.of("mock", "suno", "stableaudio", "localstableaudio").contains(activeProvider)) {
             log.warn("Unknown generation provider '{}' — falling back to mock", activeProvider);
         } else {
             log.info("Generation provider: {}", activeProvider);
@@ -69,27 +81,52 @@ public class GenerationService {
     }
 
     /** Generate using whichever provider is configured. Blocking. */
-    private List<Sample> invokeProvider(String prompt, int count) {
+    private List<Sample> invokeProvider(String prompt, int count, Double durationSeconds, Double cfgScale) {
         if ("suno".equals(activeProvider)) {
             return sunoClient.generate(prompt, count);
+        }
+        if ("stableaudio".equals(activeProvider)) {
+            return stableAudioClient.generate(prompt, count);
+        }
+        if ("localstableaudio".equals(activeProvider)) {
+            return localStableAudioClient.generate(prompt, count, durationSeconds, cfgScale);
         }
         return mockClient.generate(prompt, count);
     }
 
+    /** Backwards-compatible entry point (no per-request tuning). */
+    public GenerationJobDto startJob(String prompt, Integer requestedCount) {
+        return startJob(prompt, requestedCount, null, null, null);
+    }
+
     /**
      * Create a job and start generation in the background. Returns immediately.
+     * {@code durationSeconds}/{@code cfgScale} tune the (local) Stable Audio
+     * provider per request; {@code category} is an optional hint prepended to
+     * the prompt to steer the kind of sound.
      */
-    public GenerationJobDto startJob(String prompt, Integer requestedCount) {
+    public GenerationJobDto startJob(String prompt, Integer requestedCount,
+                                     Double durationSeconds, Double cfgScale, String category) {
         int count = clamp(requestedCount);
+        String effectivePrompt = applyCategory(prompt, category);
         String jobId = activeProvider + "_" + UUID.randomUUID().toString().substring(0, 8);
 
-        JobState state = new JobState(jobId, prompt, activeProvider);
+        JobState state = new JobState(jobId, effectivePrompt, activeProvider);
+        state.durationSeconds = durationSeconds;
+        state.cfgScale = cfgScale;
         jobs.put(jobId, state);
 
         // Run on the shared executor — submitting via the injected bean (rather
         // than an @Async self-invocation) keeps the work genuinely asynchronous.
         executor.execute(() -> runGeneration(jobId));
         return toDto(state);
+    }
+
+    private String applyCategory(String prompt, String category) {
+        if (category == null || category.isBlank()) {
+            return prompt;
+        }
+        return category.trim() + ", " + prompt;
     }
 
     void runGeneration(String jobId) {
@@ -100,7 +137,12 @@ public class GenerationService {
 
         state.status = "generating";
         try {
-            List<Sample> generated = invokeProvider(state.prompt, DEFAULT_COUNT);
+            List<Sample> generated = invokeProvider(state.prompt, DEFAULT_COUNT,
+                    state.durationSeconds, state.cfgScale);
+            // Ensure every generated sample lives on disk in the generated folder:
+            // Stable Audio writes locally already; URL-based providers (Suno) are
+            // downloaded here so they can be streamed and dragged into a DAW.
+            generated.forEach(fileStore::localize);
             List<SampleDto> persisted = persist(generated);
             state.complete(persisted);
             log.info("Generation job {} complete — {} sample(s)", jobId, persisted.size());
@@ -156,6 +198,8 @@ public class GenerationService {
         final String prompt;
         final String provider;
         final Instant createdAt = Instant.now();
+        volatile Double durationSeconds;
+        volatile Double cfgScale;
         volatile String status = "queued";
         volatile List<SampleDto> samples = List.of();
         volatile String error;
