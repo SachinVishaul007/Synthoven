@@ -1,73 +1,93 @@
-# Project Handoff: Synthoven "Chop" Sample Browser Plugin
+# Synthoven / Chop Sample Browser - Developer Handoff
 
-This document outlines the architecture, vision, recent implementations, and next steps for the Synthoven "Chop" Sample Browser plugin to provide a smooth transition for the next agent/developer.
-
----
-
-## 1. Project Vision & Goals
-
-The **Chop Sample Browser** is a native C++ JUCE utility designed to run as a **VST3 Generator Plugin** and a **Standalone Application**. 
-
-Its main objectives are:
-* **Zero Backend Dependency**: Local-only folder browsing and indexing to keep the utility incredibly fast, lightweight, and offline-compatible.
-* **Seamless DAW Integration**: Enable the user to select their local sample libraries, search across files instantly, audition sounds, and drag-and-drop samples natively directly into a DAW playlist or sampler (such as FL Studio).
-* **High Aesthetics**: A dark-themed, sleek UI that looks premium and integrates visually with modern DAW workspaces.
+Welcome to the project! This document outlines the overall vision, current progress, architectural decisions, and the roadmap for completing the next phases of development for the **Chop Sample Browser** audio plugin.
 
 ---
 
-## 2. Core Architecture & Components
+## 1. Overall Vision & Goals
+The **Chop Sample Browser** is a modern, premium audio plugin (VST3 and Standalone) designed to streamline sample management for music producers. 
 
-The codebase is built on **JUCE 8** and organized into standard Processor/Editor components:
-
-### A. Audio Engine & Background Scanning (`PluginProcessor.h/cpp`)
-* **`ChopAudioProcessor`**: Manages audio device state, file audition playback, settings persistence (remembering the library folder path across sessions), and background tasks.
-* **`LibraryScannerThread`**: A nested background `juce::Thread` that recursively traverses the selected `libraryFolder` to index supported audio files (`.wav`, `.mp3`, `.aif`, `.aiff`, `.flac`). It updates atomic variables (`isScanning` and `scannedCount`) in real time to avoid locking the UI thread during deep scans.
-* **State Management**: Uses `getStateInformation` and `setStateInformation` to store settings locally in XML configuration.
-
-### B. User Interface (`PluginEditor.h/cpp` & `SampleListBox.cpp`)
-* **`ChopAudioProcessorEditor`**: Governs the split layout:
-  * **Left Panel**: Contains the "Select Folder..." and "Refresh" buttons, and the `juce::FileTreeComponent` (configured with a folders-only filter).
-  * **Right Panel**: Contains the search bar, "Search" and "Stop" buttons, and the sample list.
-* **`FoldersOnlyFilter`**: Inherits from `juce::FileFilter`. Overrides `isFileSuitable` to always return `false`. This ensures that `juce::FileTreeComponent` displays folders only, hiding individual audio files from the left tree.
-* **`SampleListBox`**: Custom list box component displaying matching samples.
-  * Captures row selection to trigger audio playback (auditioning).
-  * Implements `beginExternalDragForRow()` using `juce::DragAndDropContainer` to start native OS drag-and-drop actions to external targets (like DAW windows).
+### Key Objectives
+* **Instant Direct Search**: Traditional filename and folder search (already implemented).
+* **On-Device Semantic Search (ML)**: Enabling natural language queries (e.g., searching for "sad", "dark and ambient pads", "aggressive drums") using Hugging Face's CLAP model running locally on the user's CPU via **ONNX Runtime**.
+* **Modern Premium UI**: Clean, responsive, dark-mode design with smooth hover transitions, tag-filtering chips, and a dynamic progress bar for scanning.
 
 ---
 
-## 3. Recently Implemented Features
+## 2. Completed Architecture & Setup
 
-1. **Local-Only Search Indexing**: Removed backend Spring Boot API integrations and category tabs. Search now matches user queries against a local memory index gathered by the background scanner.
-2. **Left Panel File Filter**: Filtered out files from the tree view globally (using `FoldersOnlyFilter`), fulfilling the user requirement to only show files on the right side when a specific directory is selected.
-3. **Indexing Progress & Status Feedback**: Enabled a `juce::Timer` polling at 100ms. If scanning is active, it updates the bottom status bar: `Indexing library... (X files found)`. Upon completion, it changes to: `Indexing complete. X samples ready.`
-4. **Manual Sync/Refresh Flow**: Added a "Refresh" button next to "Select Folder...". It triggers a clean background scan and calls `directoryList.refresh()` to reload tree view directory items.
-5. **DAW Drag-and-Drop**: Mapped drag actions from `SampleListBox` to drag the native files directly into external applications.
+### A. Environment & Build System (`CMakeLists.txt`)
+* **JUCE 8 Integration**: Built as a standard VST3 and Standalone plugin using CMake.
+* **ONNX Runtime Windows x64 ZIP SDK (v1.18.0)**: Automatically fetched, extracted, and linked statically using CMake's `FetchContent`.
+* **Post-Build Dynamic Library Packaging**: The CMake script automatically copies `onnxruntime.dll` into the output target directories next to `Chop Sample Browser.vst3` and `Chop Sample Browser.exe` so the binaries run out of the box.
+* **Target Formats**: VST3 and Standalone. *(Note: CLAP was removed from the native target list as native JUCE 8 CMake requires the external `clap-juce-extensions` wrapper subproject to build a valid `.clap` binary bundle. This wrapper can be added later if needed).*
 
----
+### B. User Interface & Indexing Status (`PluginEditor.cpp`/`PluginProcessor.cpp`)
+* Added a **"Refresh"** button next to the "Select Folder..." button.
+* Built a background `LibraryScannerThread` that recursively indexes the target directory.
+* The GUI thread polls progress and displays status dynamically in the bottom bar (e.g., `Indexing library... (X files found)` and updates to completion text).
 
-## 4. Development & Build Setup
-
-### Prerequisites
-* Windows OS
-* CMake (>= 3.15)
-* MSVC Compiler / Build Tools
-
-### Compiling
-To build the Standalone app and VST3 target, navigate to the `plugin/build` directory and run:
-```powershell
-cmake --build . --config Release
-```
-
-> [!WARNING]
-> **Process Lock Warnings**: If the standalone executable (`Chop Sample Browser.exe`) is running, the linker will fail with `LNK1104`. Make sure to close the app or terminate it via terminal:
-> ```powershell
-> Get-Process -Name "*Chop*" -ErrorAction SilentlyContinue | Stop-Process -Force
-> ```
+### C. The ML Preprocessing Pipeline (Phase 2 Completed)
+We have fully implemented and compiled the preprocessing steps required by the CLAP transformer:
+1. **RoBERTa / GPT-2 BPE Tokenizer** (`Source/BpeTokenizer.h`, `Source/BpeTokenizer.cpp`):
+   * Pure C++ tokenizer utilizing JUCE's string conversion helpers (to avoid deprecated `<codecvt>` warnings) and JUCE's JSON parser (zero external dependency).
+   * Implements standard byte-level BPE vocabulary mapping and pads/truncates inputs to the shape required by CLAP's text encoder.
+2. **DSP Mel-Spectrogram Extractor** (`Source/MelSpectrogramExtractor.h`, `Source/MelSpectrogramExtractor.cpp`):
+   * Uses `juce::dsp::FFT` for spectral analysis.
+   * Automatically resamples files of any format/sample rate to **48,000 Hz** (linear resampler).
+   * Extracts log-mel spectrogram frames using standard parameters: 64 mel bins, Hann window of size 1024, and a hop size of 480 samples.
+   * Implements **Slaney normalization** on the triangular mel filterbank to match Python's `librosa` / Hugging Face preprocessing exactly.
+   * Handles audio padding (looping short files, cropping long files) to output a flat vector representing exactly **1001 frames x 64 mel-bins** (10 seconds of audio) as expected by the CLAP audio encoder.
 
 ---
 
-## 5. Suggested Next Steps
+## 3. Next Steps: Phase 3 & Phase 4
 
-1. **Waveform Visualizer Component**: Implement a simple visualizer in `SampleListBox` or as a separate section in the editor to show the waveform of the currently selected/auditioned sample.
-2. **Fuzzy Search & Filtering**: Enhance `doSearch()` in `PluginEditor.cpp` to support fuzzy string matching (or tokenized search terms) and filters (e.g. searching only for files of a specific length or format).
-3. **Category Tagging**: Parse file/folder paths to automatically tag samples (e.g. placing samples in folders containing "Kick" or "Snare" under quick category filters).
+### Phase 3: ONNX Inference & Caching
+The next agent should implement ONNX Runtime inference to generate embedding vectors:
+1. **Model Files Setup**:
+   * Have the plugin look in the standard app data directory (e.g., `%APPDATA%/ChopSampleBrowser/models/`) for the following files:
+     * `vocab.json`
+     * `merges.txt`
+     * `text_encoder.onnx`
+     * `audio_encoder.onnx`
+2. **Tokenizer & Model Initialization**:
+   * Load the tokenizer vocab and merges files in `PluginProcessor` on startup.
+   * Initialize two `Ort::Session` objects (one for text encoder, one for audio encoder) using ONNX Runtime C++ APIs.
+3. **Index-Time Audio Embeddings**:
+   * During library scanning, run the audio files through `MelSpectrogramExtractor` to get the `1001 x 64` spectrogram features.
+   * Pass the features to `audio_encoder.onnx` to get a 512-dimension float vector (audio embedding).
+   * **Cache Database**: Write these 512-D vectors to a flat binary file (`tag_cache.bin` or inside the XML database) next to `%APPDATA%/ChopSampleBrowser/tag_cache.xml` to avoid recalculating embeddings on subsequent launches.
+4. **Query-Time Text Embeddings**:
+   * Tokenize user text queries using `BpeTokenizer` to generate `input_ids` and `attention_mask` (pad to length 77).
+   * Pass them to `text_encoder.onnx` to get a 512-dimension float vector (text embedding).
+5. **Cosine Similarity Match**:
+   * Compute the dot product between the text embedding vector and all cached audio embedding vectors.
+   * Sort the search results in descending order of similarity score.
+
+### Phase 4: Search UI & Mood Tags
+1. **Mood Tag Chips**:
+   * Add clickable tag chips (e.g., `[Sad]`, `[Dark]`, `[Happy]`, `[Aggressive]`) above the search bar in `PluginEditor`.
+   * Clicking a tag enters it into the search query or automatically triggers a semantic similarity search using that tag as the query text.
+2. **Search Toggle**:
+   * Allow users to toggle between standard filename/tag substring matching and ML semantic search.
+
+---
+
+## 4. How to Build & Run
+To compile the VST3 and Standalone plugin:
+1. Open PowerShell and navigate to the build directory:
+   ```powershell
+   cd d:\Rohan\Antigravity\Synthoven_Fresh\plugin\build
+   ```
+2. Configure CMake:
+   ```powershell
+   cmake ..
+   ```
+3. Build the Release configuration:
+   ```powershell
+   cmake --build . --config Release
+   ```
+4. Find the built outputs under `ChopPlugin_artefacts/Release/`.
+
+Happy coding!
