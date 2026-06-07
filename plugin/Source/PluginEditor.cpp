@@ -7,17 +7,17 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
       processorRef (p)
 {
     // Define the offline resource provider to load files from FRONTEND_DIST_DIR
-    auto getResourceForUrl = [] (const juce::String& url) -> std::optional<juce::WebBrowserComponent::Resource>
+    auto getResourceForUrl = [] (const juce::String& path) -> std::optional<juce::WebBrowserComponent::Resource>
     {
-        juce::String path = url;
-        if (path.startsWith ("http://localhost"))
-            path = path.substring (16); // Remove "http://localhost"
-        
-        if (path.isEmpty() || path == "/")
-            path = "/index.html";
+        juce::String cleanPath = path;
+        while (cleanPath.startsWith ("/") || cleanPath.startsWith ("\\"))
+            cleanPath = cleanPath.substring (1);
+
+        if (cleanPath.isEmpty())
+            cleanPath = "index.html";
 
         juce::File rootDir (FRONTEND_DIST_DIR);
-        juce::File file = rootDir.getChildFile (path);
+        juce::File file = rootDir.getChildFile (cleanPath);
         
         if (file.existsAsFile())
         {
@@ -25,8 +25,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
             juce::FileInputStream stream (file);
             if (stream.openedOk())
             {
-                mb.setSize (file.getSize());
-                stream.read (mb.getData(), mb.getSize());
+                mb.setSize ((size_t)file.getSize());
+                stream.read (mb.getData(), (int)mb.getSize());
                 juce::String mimeType = "text/plain";
                 auto ext = file.getFileExtension().toLowerCase();
                 if (ext == ".html" || ext == ".htm") mimeType = "text/html";
@@ -185,7 +185,7 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     webView = std::make_unique<juce::WebBrowserComponent> (options);
     addAndMakeVisible (webView.get());
 
-    webView->goToURL ("http://localhost/index.html");
+    webView->goToURL (juce::WebBrowserComponent::getResourceProviderRoot());
 
     setSize (1000, 540);
 }
