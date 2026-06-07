@@ -6,9 +6,24 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     : AudioProcessorEditor (&p),
       processorRef (p)
 {
+    // Delete previous log file
+    juce::File::getSpecialLocation (juce::File::tempDirectory)
+        .getChildFile ("chop_plugin_debug.log")
+        .deleteFile();
+
     // Define the offline resource provider to load files from FRONTEND_DIST_DIR
     auto getResourceForUrl = [] (const juce::String& path) -> std::optional<juce::WebBrowserComponent::Resource>
     {
+        juce::File logFile = juce::File::getSpecialLocation (juce::File::tempDirectory)
+            .getChildFile ("chop_plugin_debug.log");
+        
+        auto log = [&logFile] (const juce::String& text)
+        {
+            logFile.appendText (text + "\n");
+        };
+
+        log ("--- Request: " + path);
+
         juce::String cleanPath = path;
         while (cleanPath.startsWith ("/") || cleanPath.startsWith ("\\"))
             cleanPath = cleanPath.substring (1);
@@ -16,8 +31,18 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
         if (cleanPath.isEmpty())
             cleanPath = "index.html";
 
-        juce::File rootDir (FRONTEND_DIST_DIR);
+        juce::String distDir = FRONTEND_DIST_DIR;
+        if (distDir.startsWith ("\"") && distDir.endsWith ("\""))
+            distDir = distDir.substring (1, distDir.length() - 1);
+
+        juce::File rootDir (distDir);
+        log ("FRONTEND_DIST_DIR path: " + rootDir.getFullPathName());
+        log ("rootDir exists: " + juce::String (rootDir.exists() ? "YES" : "NO"));
+        log ("rootDir isDirectory: " + juce::String (rootDir.isDirectory() ? "YES" : "NO"));
+
         juce::File file = rootDir.getChildFile (cleanPath);
+        log ("Resolved file path: " + file.getFullPathName());
+        log ("file existsAsFile: " + juce::String (file.existsAsFile() ? "YES" : "NO"));
         
         if (file.existsAsFile())
         {
@@ -38,10 +63,20 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
                 else if (ext == ".wav")              mimeType = "audio/wav";
                 else if (ext == ".mp3")              mimeType = "audio/mpeg";
 
+                log ("Serving file with mimeType: " + mimeType + ", size: " + juce::String (mb.getSize()));
+
                 std::vector<std::byte> byteVec (mb.getSize());
                 std::memcpy (byteVec.data(), mb.getData(), mb.getSize());
                 return juce::WebBrowserComponent::Resource { std::move (byteVec), mimeType };
             }
+            else
+            {
+                log ("Failed to open file stream!");
+            }
+        }
+        else
+        {
+            log ("File does not exist!");
         }
         return std::nullopt;
     };
