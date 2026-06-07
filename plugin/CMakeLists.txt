@@ -43,7 +43,8 @@ target_sources(ChopPlugin PRIVATE
     Source/ChopApiClient.cpp
     Source/SampleListBox.cpp
     Source/BpeTokenizer.cpp
-    Source/MelSpectrogramExtractor.cpp)
+    Source/MelSpectrogramExtractor.cpp
+    Source/ClapModelManager.cpp)
 
 target_compile_definitions(ChopPlugin PUBLIC
     JUCE_WEB_BROWSER=0

@@ -24,6 +24,33 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     addAndMakeVisible (searchButton);
     addAndMakeVisible (stopButton);
 
+    semanticSearchToggle.setButtonText ("AI Search");
+    semanticSearchToggle.setToggleState (processorRef.isSemanticSearchEnabled(), juce::dontSendNotification);
+    semanticSearchToggle.onClick = [this]
+    {
+        processorRef.setSemanticSearchEnabled (semanticSearchToggle.getToggleState());
+        doSearch();
+    };
+    semanticSearchToggle.setColour (juce::ToggleButton::textColourId, juce::Colours::white.withAlpha (0.9f));
+    semanticSearchToggle.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe0a458));
+    addAndMakeVisible (semanticSearchToggle);
+
+    for (const auto& tag : tags)
+    {
+        auto btn = std::make_unique<juce::TextButton> (tag);
+        btn->setButtonText (tag);
+        btn->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff202024));
+        btn->setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.8f));
+        btn->onClick = [this, tag]
+        {
+            searchBox.setText (tag, juce::dontSendNotification);
+            doSearch();
+            updateTagHighlighting (tag);
+        };
+        addAndMakeVisible (*btn);
+        tagButtons.push_back (std::move (btn));
+    }
+
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.6f));
     statusLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
     addAndMakeVisible (statusLabel);
@@ -111,24 +138,23 @@ void ChopAudioProcessorEditor::doSearch()
     if (query.isEmpty())
         return;
 
+    updateTagHighlighting (query);
+
     setStatus ("Searching local library for \"" + query + "\"…");
 
-    auto allFiles = processorRef.getScannedFiles();
+    auto matchedFiles = processorRef.performSearch (query);
     juce::Array<Sample> matchedSamples;
 
-    for (auto& f : allFiles)
+    for (auto& f : matchedFiles)
     {
-        if (f.getFileNameWithoutExtension().containsIgnoreCase (query))
-        {
-            Sample s;
-            s.id = -1;
-            s.name = f.getFileNameWithoutExtension();
-            s.type = "LIBRARY";
-            s.format = f.getFileExtension().removeCharacters (".");
-            s.localFilePath = f.getFullPathName();
-            s.durationMs = 0;
-            matchedSamples.add (s);
-        }
+        Sample s;
+        s.id = -1;
+        s.name = f.getFileNameWithoutExtension();
+        s.type = "LIBRARY";
+        s.format = f.getFileExtension().removeCharacters (".");
+        s.localFilePath = f.getFullPathName();
+        s.durationMs = 0;
+        matchedSamples.add (s);
     }
 
     list->setSamples (matchedSamples);
@@ -164,12 +190,25 @@ void ChopAudioProcessorEditor::resized()
     fileTree.setBounds (leftPane);
 
     // Right pane layout
-    // Top bar: title + search + stop buttons
+    // Top bar: title + search + stop buttons + AI toggle
     auto top = rightPane.removeFromTop (32);
     titleLabel.setBounds (top.removeFromLeft (70));
     stopButton.setBounds (top.removeFromRight (60).reduced (2, 0));
     searchButton.setBounds (top.removeFromRight (74).reduced (2, 0));
+    semanticSearchToggle.setBounds (top.removeFromRight (85).reduced (2, 0));
     searchBox.setBounds (top.reduced (2, 0));
+
+    rightPane.removeFromTop (8); // spacer
+
+    // Tag buttons row
+    auto tagRow = rightPane.removeFromTop (28);
+    int btnWidth = 75;
+    int spacing = 6;
+    for (auto& btn : tagButtons)
+    {
+        btn->setBounds (tagRow.removeFromLeft (btnWidth));
+        tagRow.removeFromLeft (spacing);
+    }
 
     rightPane.removeFromTop (8); // spacer
 
@@ -179,18 +218,51 @@ void ChopAudioProcessorEditor::resized()
 
 void ChopAudioProcessorEditor::timerCallback()
 {
-    const bool isScanning = processorRef.isLibraryScanning();
-    const int count = processorRef.getLibraryScannedCount();
-
-    if (isScanning)
+    auto& modelMgr = processorRef.getModelManager();
+    
+    if (modelMgr.isDownloading())
     {
+        setStatus (modelMgr.getStatusMessage());
+        wasScanningLastCheck = true;
+    }
+    else if (processorRef.isLibraryScanning())
+    {
+        const int count = processorRef.getLibraryScannedCount();
         setStatus ("Indexing library... (" + juce::String (count) + " files found)");
+        wasScanningLastCheck = true;
+    }
+    else if (processorRef.isEmbeddingIndexing())
+    {
+        const int current = processorRef.getEmbeddingIndexedCount();
+        const int total = processorRef.getEmbeddingTotalCount();
+        setStatus ("Indexing AI features: " + juce::String (current) + " / " + juce::String (total));
         wasScanningLastCheck = true;
     }
     else if (wasScanningLastCheck)
     {
-        setStatus ("Indexing complete. " + juce::String (count) + " samples ready.");
+        const int count = processorRef.getLibraryScannedCount();
+        if (modelMgr.isModelLoaded())
+            setStatus ("Library ready. " + juce::String (count) + " samples indexed with AI Search.");
+        else
+            setStatus ("Library ready. " + juce::String (count) + " samples indexed (AI Search disabled).");
         wasScanningLastCheck = false;
+    }
+}
+
+void ChopAudioProcessorEditor::updateTagHighlighting (const juce::String& activeTag)
+{
+    for (auto& btn : tagButtons)
+    {
+        if (btn->getButtonText().equalsIgnoreCase (activeTag))
+        {
+            btn->setColour (juce::TextButton::buttonColourId, juce::Colour (0xffe0a458));
+            btn->setColour (juce::TextButton::textColourOffId, juce::Colours::black);
+        }
+        else
+        {
+            btn->setColour (juce::TextButton::buttonColourId, juce::Colour (0xff202024));
+            btn->setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.8f));
+        }
     }
 }
 

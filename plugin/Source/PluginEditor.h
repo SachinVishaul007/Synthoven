@@ -57,6 +57,11 @@ private:
     juce::TextEditor  searchBox;
     juce::TextButton  searchButton  { "Search" };
     juce::TextButton  stopButton    { "Stop" };
+    juce::ToggleButton semanticSearchToggle { "AI Search" };
+
+    std::vector<std::unique_ptr<juce::TextButton>> tagButtons;
+    std::vector<juce::String> tags = { "Happy", "Dark", "Sad", "Energetic", "Ambient", "Cinematic", "Punchy" };
+    void updateTagHighlighting (const juce::String& activeTag);
 
     juce::Label       titleLabel;
     juce::Label       statusLabel;

@@ -3,7 +3,10 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <atomic>
+#include <unordered_map>
 #include "ChopApiClient.h"
+#include "ClapModelManager.h"
+#include "MelSpectrogramExtractor.h"
 
 /**
  * Chop Sample Browser — a plugin that searches/generates/auditions samples from
@@ -57,6 +60,23 @@ public:
     bool isLibraryScanning() const { return isScanning.load(); }
     int getLibraryScannedCount() const { return scannedCount.load(); }
 
+    // ── Embedding cache & search ───────────────────────────────────────────
+    bool isEmbeddingIndexing() const { return isEmbeddingScanning.load(); }
+    int getEmbeddingIndexedCount() const { return embeddingIndexedCount.load(); }
+    int getEmbeddingTotalCount() const { return embeddingTotalCount.load(); }
+
+    ClapModelManager& getModelManager() { return modelManager; }
+    bool isSemanticSearchEnabled() const { return semanticSearchEnabled.load(); }
+    void setSemanticSearchEnabled (bool enabled) { semanticSearchEnabled.store (enabled); }
+
+    void loadEmbeddingCache();
+    void saveEmbeddingCache();
+    juce::File getEmbeddingCacheFile() const;
+    juce::String getRelativePath (const juce::File& file, const juce::File& root) const;
+    juce::String normalizePath (const juce::String& path) const;
+
+    juce::Array<juce::File> performSearch (const juce::String& query);
+
 private:
     class LibraryScannerThread : public juce::Thread
     {
@@ -91,6 +111,77 @@ private:
             }
 
             processor.isScanning = false;
+
+            // Now run background embedding scan pass
+            if (! threadShouldExit())
+            {
+                processor.isEmbeddingScanning = true;
+                
+                auto allFiles = processor.getScannedFiles();
+                processor.embeddingTotalCount = allFiles.size();
+                processor.embeddingIndexedCount = 0;
+
+                int unsavedCount = 0;
+
+                for (int i = 0; i < allFiles.size(); ++i)
+                {
+                    if (threadShouldExit())
+                        break;
+
+                    const auto& file = allFiles[i];
+                    juce::String relPath = processor.getRelativePath (file, rootFolder);
+                    juce::int64 modTime = file.getLastModificationTime().toMilliseconds();
+
+                    bool needsEmbedding = false;
+                    {
+                        const juce::ScopedLock sl (processor.cacheLock);
+                        auto it = processor.embeddingCache.find (relPath);
+                        if (it == processor.embeddingCache.end() || it->second.lastModifiedTime != modTime)
+                        {
+                            needsEmbedding = true;
+                        }
+                    }
+
+                    if (needsEmbedding)
+                    {
+                        // Sleep if model not loaded yet (e.g. still downloading)
+                        while (! processor.modelManager.isModelLoaded() && ! threadShouldExit())
+                        {
+                            juce::Thread::sleep (500);
+                        }
+
+                        if (threadShouldExit())
+                            break;
+
+                        std::vector<float> spectrogram;
+                        if (processor.extractor.extractFromFile (file, spectrogram))
+                        {
+                            std::vector<float> embedding;
+                            if (processor.modelManager.getAudioEmbedding (spectrogram, embedding))
+                            {
+                                const juce::ScopedLock sl (processor.cacheLock);
+                                processor.embeddingCache[relPath] = { modTime, std::move (embedding) };
+                                unsavedCount++;
+                            }
+                        }
+                    }
+
+                    processor.embeddingIndexedCount = i + 1;
+
+                    if (unsavedCount >= 20)
+                    {
+                        processor.saveEmbeddingCache();
+                        unsavedCount = 0;
+                    }
+                }
+
+                if (unsavedCount > 0)
+                {
+                    processor.saveEmbeddingCache();
+                }
+
+                processor.isEmbeddingScanning = false;
+            }
         }
 
     private:
@@ -137,6 +228,24 @@ private:
     juce::Array<juce::File> localLibraryFiles;
     juce::CriticalSection localFilesLock;
     LibraryScannerThread scannerThread { *this };
+
+    // ── Embedding Caching & ML Search ──────────────────────────────────────
+    ClapModelManager modelManager;
+    MelSpectrogramExtractor extractor;
+
+    struct CachedEmbedding
+    {
+        juce::int64 lastModifiedTime = 0;
+        std::vector<float> embedding;
+    };
+
+    juce::CriticalSection cacheLock;
+    std::unordered_map<juce::String, CachedEmbedding> embeddingCache;
+
+    std::atomic<bool> isEmbeddingScanning { false };
+    std::atomic<int> embeddingIndexedCount { 0 };
+    std::atomic<int> embeddingTotalCount { 0 };
+    std::atomic<bool> semanticSearchEnabled { true };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChopAudioProcessor)
 };
