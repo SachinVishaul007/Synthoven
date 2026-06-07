@@ -19,6 +19,7 @@ struct Sample
     bool           favorite   = false;
     juce::String   prompt;
     juce::String   provider;
+    juce::String   localFilePath;
 
     bool isGenerated() const { return type.equalsIgnoreCase ("GENERATED"); }
 

@@ -1,7 +1,12 @@
 #include "PluginEditor.h"
 
 ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
-    : AudioProcessorEditor (&p), processorRef (p)
+    : AudioProcessorEditor (&p),
+      processorRef (p),
+      folderFilter(),
+      fileScannerThread ("ChopFileScanner"),
+      directoryList (&folderFilter, fileScannerThread),
+      fileTree (directoryList)
 {
     titleLabel.setText ("CHOP", juce::dontSendNotification);
     titleLabel.setFont (juce::Font (juce::FontOptions (20.0f).withStyle ("Bold")));
@@ -15,18 +20,9 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     addAndMakeVisible (searchBox);
 
     searchButton.onClick = [this] { doSearch(); };
-    importButton.onClick = [this] { doImport(); };
     stopButton.onClick   = [this] { processorRef.stopAudition(); setStatus ("Stopped"); };
     addAndMakeVisible (searchButton);
-    addAndMakeVisible (importButton);
     addAndMakeVisible (stopButton);
-
-    libraryButton.onClick   = [this] { loadSection ("/api/library/samples/library",   "Library"); };
-    favoritesButton.onClick = [this] { loadSection ("/api/library/samples/favorites", "Favorites"); };
-    generatedButton.onClick = [this] { loadSection ("/api/library/samples/generated", "Generated"); };
-    recentButton.onClick    = [this] { loadSection ("/api/library/samples/recent",    "Recent"); };
-    for (auto* b : { &libraryButton, &favoritesButton, &generatedButton, &recentButton })
-        addAndMakeVisible (b);
 
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.6f));
     statusLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
@@ -35,35 +31,73 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     list = std::make_unique<SampleListBox> (processorRef);
     list->onAudition = [this] (const Sample& s)
     {
-        setStatus ("Loading \"" + s.name + "\"…");
-        juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
-        processorRef.getApiClient().downloadSample (s.id, s.format,
-            [safe, name = s.name] (juce::File f, juce::String error)
+        if (s.localFilePath.isNotEmpty())
+        {
+            juce::File f (s.localFilePath);
+            if (f.existsAsFile())
             {
-                if (safe == nullptr) return;
-                if (f.existsAsFile())
-                {
-                    safe->processorRef.auditionFile (f);
-                    safe->setStatus ("Playing \"" + name + "\"");
-                }
-                else
-                {
-                    safe->setStatus (error.isNotEmpty() ? error : "Could not load sample");
-                }
-            });
+                processorRef.auditionFile (f);
+                setStatus ("Playing local file: " + s.name);
+            }
+            return;
+        }
     };
     list->onStatus = [this] (const juce::String& s) { setStatus (s); };
     addAndMakeVisible (*list);
 
-    setSize (760, 540);
+    // Setup local library browser components
+    selectFolderButton.onClick = [this] { selectLibraryFolder(); };
+    selectFolderButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff202024));
+    selectFolderButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    addAndMakeVisible (selectFolderButton);
 
-    // Show whatever is already in the library on open.
-    loadSection ("/api/library/samples/library", "Library");
+    refreshButton.onClick = [this] {
+        processorRef.triggerLibraryScan();
+        directoryList.refresh();
+    };
+    refreshButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff202024));
+    refreshButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    addAndMakeVisible (refreshButton);
+
+    fileTree.setColour (juce::TreeView::backgroundColourId, juce::Colour (0xff161619));
+    fileTree.setColour (juce::TreeView::linesColourId, juce::Colours::white.withAlpha (0.1f));
+    fileTree.setColour (juce::TreeView::selectedItemBackgroundColourId, juce::Colour (0xffe0a458).withAlpha (0.2f));
+    fileTree.setColour (juce::DirectoryContentsDisplayComponent::textColourId, juce::Colours::white.withAlpha (0.9f));
+    fileTree.setColour (juce::DirectoryContentsDisplayComponent::highlightedTextColourId, juce::Colours::white);
+
+    fileTree.addListener (this);
+    fileTree.setDragAndDropDescription ("ChopLocalFile");
+    addAndMakeVisible (fileTree);
+
+    fileScannerThread.startThread();
+
+    // Load directory from processor or default to Music folder
+    auto savedFolder = processorRef.getLibraryFolder();
+    if (savedFolder.exists() && savedFolder.isDirectory())
+    {
+        directoryList.setDirectory (savedFolder, true, false);
+        loadLocalFolder (savedFolder);
+        processorRef.triggerLibraryScan();
+    }
+    else
+    {
+        auto defaultDir = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+        if (defaultDir.exists() && defaultDir.isDirectory())
+        {
+            directoryList.setDirectory (defaultDir, true, false);
+            loadLocalFolder (defaultDir);
+            processorRef.triggerLibraryScan();
+        }
+    }
+
+    startTimer (100);
+    setSize (1000, 540);
 }
 
 ChopAudioProcessorEditor::~ChopAudioProcessorEditor()
 {
-    stopTimer();
+    fileTree.removeListener (this);
+    fileScannerThread.stopThread (2000);
 }
 
 void ChopAudioProcessorEditor::setStatus (const juce::String& text)
@@ -77,140 +111,30 @@ void ChopAudioProcessorEditor::doSearch()
     if (query.isEmpty())
         return;
 
-    setStatus ("Searching \"" + query + "\"…");
-    pollingJobId = {};
-    stopTimer();
+    setStatus ("Searching local library for \"" + query + "\"…");
 
-    juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
-    processorRef.getApiClient().search (query,
-        [safe] (ChopApiClient::SearchResult result, juce::String error)
-        {
-            if (safe == nullptr) return;
-            if (error.isNotEmpty())
-            {
-                safe->setStatus ("Search failed — " + error);
-                return;
-            }
-            safe->list->setSamples (result.libraryResults);
-            safe->setStatus (juce::String (result.libraryResults.size()) + " library result(s)"
-                             + (result.generationJobId.isNotEmpty() ? " · generating…" : ""));
-            if (result.generationJobId.isNotEmpty())
-                safe->startPolling (result.generationJobId);
-        });
-}
+    auto allFiles = processorRef.getScannedFiles();
+    juce::Array<Sample> matchedSamples;
 
-void ChopAudioProcessorEditor::startPolling (const juce::String& jobId)
-{
-    pollingJobId = jobId;
-    pollAttempts = 0;
-    startTimer (2000);
-}
-
-void ChopAudioProcessorEditor::timerCallback()
-{
-    if (pollingJobId.isEmpty())
+    for (auto& f : allFiles)
     {
-        stopTimer();
-        return;
+        if (f.getFileNameWithoutExtension().containsIgnoreCase (query))
+        {
+            Sample s;
+            s.id = -1;
+            s.name = f.getFileNameWithoutExtension();
+            s.type = "LIBRARY";
+            s.format = f.getFileExtension().removeCharacters (".");
+            s.localFilePath = f.getFullPathName();
+            s.durationMs = 0;
+            matchedSamples.add (s);
+        }
     }
 
-    if (++pollAttempts > maxPollAttempts)
-    {
-        stopTimer();
-        pollingJobId = {};
-        setStatus ("Generation timed out");
-        return;
-    }
-
-    juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
-    processorRef.getApiClient().getGenerationJob (pollingJobId,
-        [safe] (ChopApiClient::JobResult job, juce::String error)
-        {
-            if (safe == nullptr) return;
-            if (error.isNotEmpty())
-            {
-                safe->stopTimer();
-                safe->pollingJobId = {};
-                safe->setStatus ("Generation error — " + error);
-                return;
-            }
-
-            if (job.status == "complete")
-            {
-                safe->stopTimer();
-                safe->pollingJobId = {};
-                safe->list->appendSamples (job.samples);
-                safe->setStatus ("Generated " + juce::String (job.samples.size()) + " sample(s)");
-            }
-            else if (job.status == "failed")
-            {
-                safe->stopTimer();
-                safe->pollingJobId = {};
-                safe->setStatus ("Generation failed" + (job.error.isNotEmpty() ? (" — " + job.error) : juce::String()));
-            }
-            // queued / generating → keep polling
-        });
+    list->setSamples (matchedSamples);
+    setStatus ("Found " + juce::String (matchedSamples.size()) + " sample(s)");
 }
 
-void ChopAudioProcessorEditor::loadSection (const juce::String& path, const juce::String& label)
-{
-    setStatus ("Loading " + label + "…");
-    pollingJobId = {};
-    stopTimer();
-
-    juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
-    processorRef.getApiClient().getSamples (path,
-        [safe, label] (juce::Array<Sample> samples, juce::String error)
-        {
-            if (safe == nullptr) return;
-            if (error.isNotEmpty())
-            {
-                safe->setStatus (label + " failed — " + error);
-                return;
-            }
-            safe->list->setSamples (samples);
-            safe->setStatus (label + " · " + juce::String (samples.size()) + " sample(s)");
-        });
-}
-
-void ChopAudioProcessorEditor::doImport()
-{
-    chooser = std::make_unique<juce::FileChooser> (
-        "Select audio files to import",
-        juce::File::getSpecialLocation (juce::File::userMusicDirectory),
-        "*.wav;*.mp3;*.aiff;*.aif;*.flac");
-
-    const auto flags = juce::FileBrowserComponent::openMode
-                     | juce::FileBrowserComponent::canSelectFiles
-                     | juce::FileBrowserComponent::canSelectMultipleItems;
-
-    juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
-    chooser->launchAsync (flags, [safe] (const juce::FileChooser& fc)
-    {
-        if (safe == nullptr) return;
-        auto results = fc.getResults();
-        if (results.isEmpty())
-            return;
-
-        juce::Array<juce::File> files;
-        for (auto& f : results)
-            files.add (f);
-
-        safe->setStatus ("Uploading " + juce::String (files.size()) + " file(s)…");
-        safe->processorRef.getApiClient().uploadFiles (files,
-            [safe] (juce::Array<Sample> imported, juce::String error)
-            {
-                if (safe == nullptr) return;
-                if (error.isNotEmpty())
-                {
-                    safe->setStatus ("Upload failed — " + error);
-                    return;
-                }
-                safe->list->setSamples (imported);
-                safe->setStatus ("Imported " + juce::String (imported.size()) + " sample(s)");
-            });
-    });
-}
 
 void ChopAudioProcessorEditor::paint (juce::Graphics& g)
 {
@@ -221,29 +145,122 @@ void ChopAudioProcessorEditor::resized()
 {
     auto area = getLocalBounds().reduced (12);
 
-    // Top bar: title + search + buttons
-    auto top = area.removeFromTop (32);
+    // Status bar at the bottom spans the whole width
+    statusLabel.setBounds (area.removeFromBottom (22));
+
+    area.removeFromBottom (4); // minor spacer
+
+    // Now divide the remaining space into left browser pane and right main pane
+    auto leftPane = area.removeFromLeft (240);
+    area.removeFromLeft (12); // spacer between panes
+    auto rightPane = area;
+
+    // Left pane layout
+    auto buttonRow = leftPane.removeFromTop (28);
+    selectFolderButton.setBounds (buttonRow.removeFromLeft (140));
+    buttonRow.removeFromLeft (8);
+    refreshButton.setBounds (buttonRow);
+    leftPane.removeFromTop (8); // spacer
+    fileTree.setBounds (leftPane);
+
+    // Right pane layout
+    // Top bar: title + search + stop buttons
+    auto top = rightPane.removeFromTop (32);
     titleLabel.setBounds (top.removeFromLeft (70));
-    importButton.setBounds (top.removeFromRight (70));
+    stopButton.setBounds (top.removeFromRight (60).reduced (2, 0));
     searchButton.setBounds (top.removeFromRight (74).reduced (2, 0));
     searchBox.setBounds (top.reduced (2, 0));
 
-    area.removeFromTop (8);
+    rightPane.removeFromTop (8); // spacer
 
-    // Section row
-    auto sectionRow = area.removeFromTop (28);
-    auto sectionW = sectionRow.getWidth() / 5;
-    libraryButton.setBounds   (sectionRow.removeFromLeft (sectionW).reduced (2, 0));
-    favoritesButton.setBounds (sectionRow.removeFromLeft (sectionW).reduced (2, 0));
-    generatedButton.setBounds (sectionRow.removeFromLeft (sectionW).reduced (2, 0));
-    recentButton.setBounds    (sectionRow.removeFromLeft (sectionW).reduced (2, 0));
-    stopButton.setBounds      (sectionRow.reduced (2, 0));
+    // List fills the rest of the right pane
+    list->setBounds (rightPane);
+}
 
-    area.removeFromTop (8);
+void ChopAudioProcessorEditor::timerCallback()
+{
+    const bool isScanning = processorRef.isLibraryScanning();
+    const int count = processorRef.getLibraryScannedCount();
 
-    // Status bar at the bottom
-    statusLabel.setBounds (area.removeFromBottom (22));
+    if (isScanning)
+    {
+        setStatus ("Indexing library... (" + juce::String (count) + " files found)");
+        wasScanningLastCheck = true;
+    }
+    else if (wasScanningLastCheck)
+    {
+        setStatus ("Indexing complete. " + juce::String (count) + " samples ready.");
+        wasScanningLastCheck = false;
+    }
+}
 
-    // List fills the rest
-    list->setBounds (area);
+void ChopAudioProcessorEditor::fileClicked (const juce::File& file, const juce::MouseEvent& e)
+{
+    juce::ignoreUnused (e);
+    if (file.isDirectory())
+    {
+        loadLocalFolder (file);
+    }
+}
+
+bool ChopAudioProcessorEditor::shouldDropFilesWhenDraggedExternally (
+    const juce::DragAndDropTarget::SourceDetails& sourceDetails,
+    juce::StringArray& files, bool& canMoveFiles)
+{
+    juce::ignoreUnused (sourceDetails, files, canMoveFiles);
+    return false;
+}
+
+void ChopAudioProcessorEditor::selectLibraryFolder()
+{
+    chooser = std::make_unique<juce::FileChooser> (
+        "Select your Sample Library Folder",
+        juce::File::getSpecialLocation (juce::File::userHomeDirectory),
+        juce::String(),
+        true, // selectDirectory
+        false // isForSave
+    );
+
+    const auto flags = juce::FileBrowserComponent::openMode
+                     | juce::FileBrowserComponent::canSelectDirectories;
+
+    juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
+    chooser->launchAsync (flags, [safe] (const juce::FileChooser& fc)
+    {
+        if (safe == nullptr) return;
+        auto result = fc.getResult();
+        if (result.isDirectory())
+        {
+            safe->setLibraryFolder (result);
+        }
+    });
+}
+
+void ChopAudioProcessorEditor::setLibraryFolder (const juce::File& folder)
+{
+    processorRef.setLibraryFolder (folder);
+    directoryList.setDirectory (folder, true, false);
+    setStatus ("Library root set to: " + folder.getFileName());
+}
+
+void ChopAudioProcessorEditor::loadLocalFolder (const juce::File& folder)
+{
+    juce::Array<juce::File> foundFiles;
+    folder.findChildFiles (foundFiles, juce::File::findFiles, false, "*.wav;*.mp3;*.aif;*.aiff;*.flac");
+
+    juce::Array<Sample> localSamples;
+    for (auto& f : foundFiles)
+    {
+        Sample s;
+        s.id = -1;
+        s.name = f.getFileNameWithoutExtension();
+        s.type = "LIBRARY";
+        s.format = f.getFileExtension().removeCharacters (".");
+        s.localFilePath = f.getFullPathName();
+        s.durationMs = 0;
+        localSamples.add (s);
+    }
+
+    list->setSamples (localSamples);
+    setStatus ("Folder \"" + folder.getFileName() + "\" · " + juce::String (localSamples.size()) + " sample(s)");
 }

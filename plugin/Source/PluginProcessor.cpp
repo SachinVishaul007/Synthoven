@@ -87,6 +87,49 @@ juce::AudioProcessorEditor* ChopAudioProcessor::createEditor()
     return new ChopAudioProcessorEditor (*this);
 }
 
+void ChopAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    juce::XmlElement xml ("CHOPSETTINGS");
+    xml.setAttribute ("libraryFolder", libraryFolder.getFullPathName());
+    copyXmlToBinary (xml, destData);
+}
+
+void ChopAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    if (auto xmlState = getXmlFromBinary (data, sizeInBytes))
+    {
+        if (xmlState->hasTagName ("CHOPSETTINGS"))
+        {
+            libraryFolder = juce::File (xmlState->getStringAttribute ("libraryFolder"));
+            triggerLibraryScan();
+        }
+    }
+}
+
+void ChopAudioProcessor::setLibraryFolder (const juce::File& folder)
+{
+    libraryFolder = folder;
+    triggerLibraryScan();
+}
+
+void ChopAudioProcessor::triggerLibraryScan()
+{
+    if (libraryFolder.isDirectory())
+        scannerThread.startScan (libraryFolder);
+}
+
+void ChopAudioProcessor::setScannedFiles (juce::Array<juce::File> files)
+{
+    const juce::ScopedLock sl (localFilesLock);
+    localLibraryFiles = std::move (files);
+}
+
+juce::Array<juce::File> ChopAudioProcessor::getScannedFiles() const
+{
+    const juce::ScopedLock sl (localFilesLock);
+    return localLibraryFiles;
+}
+
 // This creates new instances of the plugin.
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {

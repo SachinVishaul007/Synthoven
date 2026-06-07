@@ -4,7 +4,26 @@
 #include "PluginProcessor.h"
 #include "SampleListBox.h"
 
+class FoldersOnlyFilter : public juce::FileFilter
+{
+public:
+    FoldersOnlyFilter() : juce::FileFilter ("Folders Only") {}
+
+    bool isFileSuitable (const juce::File& file) const override
+    {
+        return file.isDirectory();
+    }
+
+    bool isDirectorySuitable (const juce::File& folder) const override
+    {
+        juce::ignoreUnused (folder);
+        return true;
+    }
+};
+
 class ChopAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                 public juce::FileBrowserListener,
+                                 public juce::DragAndDropContainer,
                                  private juce::Timer
 {
 public:
@@ -14,35 +33,46 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    // ── FileBrowserListener methods ────────────────────────────────────────
+    void selectionChanged() override {}
+    void fileClicked (const juce::File& file, const juce::MouseEvent& e) override;
+    void fileDoubleClicked (const juce::File& file) override {}
+    void browserRootChanged (const juce::File& newRoot) override {}
+
+    // ── DragAndDropContainer methods ───────────────────────────────────────
+    bool shouldDropFilesWhenDraggedExternally (const juce::DragAndDropTarget::SourceDetails& sourceDetails,
+                                               juce::StringArray& files, bool& canMoveFiles) override;
+
 private:
     void doSearch();
-    void doImport();
-    void loadSection (const juce::String& path, const juce::String& label);
-    void startPolling (const juce::String& jobId);
-    void timerCallback() override;
+    void loadLocalFolder (const juce::File& folder);
     void setStatus (const juce::String& text);
+    void timerCallback() override;
+
+    void selectLibraryFolder();
+    void setLibraryFolder (const juce::File& folder);
 
     ChopAudioProcessor& processorRef;
 
     juce::TextEditor  searchBox;
     juce::TextButton  searchButton  { "Search" };
-    juce::TextButton  importButton  { "Import" };
     juce::TextButton  stopButton    { "Stop" };
-
-    juce::TextButton  libraryButton   { "Library" };
-    juce::TextButton  favoritesButton { "Favorites" };
-    juce::TextButton  generatedButton { "Generated" };
-    juce::TextButton  recentButton    { "Recent" };
 
     juce::Label       titleLabel;
     juce::Label       statusLabel;
 
+    // Local library browser components
+    juce::TextButton  selectFolderButton { "Select Folder..." };
+    juce::TextButton  refreshButton      { "Refresh" };
+    FoldersOnlyFilter folderFilter;
+    juce::TimeSliceThread fileScannerThread;
+    juce::DirectoryContentsList directoryList;
+    juce::FileTreeComponent fileTree;
+
     std::unique_ptr<SampleListBox>   list;
     std::unique_ptr<juce::FileChooser> chooser;
 
-    juce::String pollingJobId;
-    int pollAttempts = 0;
-    static constexpr int maxPollAttempts = 40; // ~80s at 2s intervals
+    bool wasScanningLastCheck = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChopAudioProcessorEditor)
 };

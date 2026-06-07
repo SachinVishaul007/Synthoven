@@ -146,6 +146,16 @@ void SampleListBox::beginExternalDragForRow (int row)
 
     const auto sample = samples.getReference (row);
 
+    if (sample.localFilePath.isNotEmpty())
+    {
+        if (onStatus) onStatus ("Dragging \"" + sample.name + "\"");
+        juce::StringArray paths;
+        paths.add (sample.localFilePath);
+        juce::DragAndDropContainer::performExternalDragDropOfFiles (
+            paths, /*canMoveFiles*/ false, this);
+        return;
+    }
+
     if (onStatus) onStatus ("Preparing \"" + sample.name + "\" for drag…");
 
     // The external drag must start during this gesture, so we fetch the file
