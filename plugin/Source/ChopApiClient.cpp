@@ -126,6 +126,7 @@ void ChopApiClient::generate (const juce::String& prompt, double durationSeconds
         // 1) Start the job.
         auto* body = new juce::DynamicObject();
         body->setProperty ("prompt", prompt);
+        body->setProperty ("count", 1); // one per job; the editor loops for variations
         if (durationSeconds > 0.0) body->setProperty ("durationSeconds", durationSeconds);
         if (cfgScale > 0.0)        body->setProperty ("cfgScale", cfgScale);
         if (category.isNotEmpty()) body->setProperty ("category", category);

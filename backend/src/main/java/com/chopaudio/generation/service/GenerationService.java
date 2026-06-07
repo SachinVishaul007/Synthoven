@@ -2,7 +2,6 @@ package com.chopaudio.generation.service;
 
 import com.chopaudio.common.exception.ResourceNotFoundException;
 import com.chopaudio.generation.client.LocalStableAudioClient;
-import com.chopaudio.generation.client.MockGenerationClient;
 import com.chopaudio.generation.client.StableAudioClient;
 import com.chopaudio.generation.client.SunoClient;
 import com.chopaudio.generation.dto.GenerationJobDto;
@@ -41,7 +40,6 @@ public class GenerationService {
     private static final int DEFAULT_COUNT = 2;
     private static final int MAX_COUNT = 5;
 
-    private final MockGenerationClient mockClient;
     private final SunoClient sunoClient;
     private final StableAudioClient stableAudioClient;
     private final LocalStableAudioClient localStableAudioClient;
@@ -53,8 +51,7 @@ public class GenerationService {
 
     private final Map<String, JobState> jobs = new ConcurrentHashMap<>();
 
-    public GenerationService(MockGenerationClient mockClient,
-                             SunoClient sunoClient,
+    public GenerationService(SunoClient sunoClient,
                              StableAudioClient stableAudioClient,
                              LocalStableAudioClient localStableAudioClient,
                              GeneratedFileStore fileStore,
@@ -62,7 +59,6 @@ public class GenerationService {
                              SampleMapper mapper,
                              @Qualifier("taskExecutor") Executor executor,
                              @Value("${chop.generation.provider}") String activeProvider) {
-        this.mockClient = mockClient;
         this.sunoClient = sunoClient;
         this.stableAudioClient = stableAudioClient;
         this.localStableAudioClient = localStableAudioClient;
@@ -83,7 +79,8 @@ public class GenerationService {
     }
 
     /** Generate using whichever provider is configured. Blocking. */
-    private List<Sample> invokeProvider(String prompt, int count, Double durationSeconds, Double cfgScale, String initAudioPath) {
+    private List<Sample> invokeProvider(String prompt, int count, Double durationSeconds, Double cfgScale,
+                                        String initAudioPath, String outputNameHint) {
         if ("suno".equals(activeProvider)) {
             return sunoClient.generate(prompt, count);
         }
@@ -91,9 +88,10 @@ public class GenerationService {
             return stableAudioClient.generate(prompt, count, initAudioPath);
         }
         if ("localstableaudio".equals(activeProvider)) {
-            return localStableAudioClient.generate(prompt, count, durationSeconds, cfgScale, initAudioPath);
+            return localStableAudioClient.generate(prompt, count, durationSeconds, cfgScale, initAudioPath, outputNameHint);
         }
-        return mockClient.generate(prompt, count);
+        throw new IllegalStateException("Unknown generation provider: '" + activeProvider
+                + "'. Set chop.generation.provider to one of: suno, stableaudio, localstableaudio.");
     }
 
     /** Backwards-compatible entry point (no per-request tuning). */
@@ -115,14 +113,22 @@ public class GenerationService {
     public GenerationJobDto startJob(String prompt, Integer requestedCount,
                                      Double durationSeconds, Double cfgScale, String category,
                                      String initAudioPath) {
+        return startJob(prompt, requestedCount, durationSeconds, cfgScale, category, initAudioPath, null);
+    }
+
+    public GenerationJobDto startJob(String prompt, Integer requestedCount,
+                                     Double durationSeconds, Double cfgScale, String category,
+                                     String initAudioPath, String outputNameHint) {
         int count = clamp(requestedCount);
         String effectivePrompt = applyCategory(prompt, category);
         String jobId = activeProvider + "_" + UUID.randomUUID().toString().substring(0, 8);
 
         JobState state = new JobState(jobId, effectivePrompt, activeProvider);
+        state.count = count;
         state.durationSeconds = durationSeconds;
         state.cfgScale = cfgScale;
         state.initAudioPath = initAudioPath;
+        state.outputNameHint = outputNameHint;
         jobs.put(jobId, state);
 
         // Run on the shared executor — submitting via the injected bean (rather
@@ -146,8 +152,8 @@ public class GenerationService {
 
         state.status = "generating";
         try {
-            List<Sample> generated = invokeProvider(state.prompt, DEFAULT_COUNT,
-                    state.durationSeconds, state.cfgScale, state.initAudioPath);
+            List<Sample> generated = invokeProvider(state.prompt, state.count,
+                    state.durationSeconds, state.cfgScale, state.initAudioPath, state.outputNameHint);
             // Ensure every generated sample lives on disk in the generated folder:
             // Stable Audio writes locally already; URL-based providers (Suno) are
             // downloaded here so they can be streamed and dragged into a DAW.
@@ -215,9 +221,11 @@ public class GenerationService {
         final String prompt;
         final String provider;
         final Instant createdAt = Instant.now();
+        volatile int count = 1;
         volatile Double durationSeconds;
         volatile Double cfgScale;
         volatile String initAudioPath;
+        volatile String outputNameHint; // base name for generated files (e.g. "<source>_generated")
         volatile String status = "queued";
         volatile List<SampleDto> samples = List.of();
         volatile String error;

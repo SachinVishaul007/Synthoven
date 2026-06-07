@@ -49,12 +49,29 @@ public class GenerationController {
             @RequestParam("audio") MultipartFile audio) throws IOException {
         
         Path tempFile = Files.createTempFile("sa_init_", ".wav");
-        audio.transferTo(tempFile.toFile());
+        // Copy the upload's stream rather than MultipartFile.transferTo(): with
+        // Spring Boot's default file-size-threshold=0 the part is disk-backed, so
+        // transferTo() does a move/rename that fails because createTempFile has
+        // already created the destination. Files.copy + REPLACE_EXISTING is safe.
+        try (java.io.InputStream in = audio.getInputStream()) {
+            Files.copy(in, tempFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+
+        // Name the generated output after the source file (+ "_generated") so it's
+        // easy to trace back to its origin, e.g. "warm_bass" -> "warm_bass_generated".
+        String original = audio.getOriginalFilename();
+        String base = (original == null || original.isBlank()) ? "audio" : original;
+        int dot = base.lastIndexOf('.');
+        if (dot > 0) {
+            base = base.substring(0, dot);
+        }
+        String outputNameHint = base + "_generated";
 
         GenerationJobDto job = generationService.startJob(
                 prompt, 1,
                 durationSeconds, cfgScale, category,
-                tempFile.toAbsolutePath().toString());
+                tempFile.toAbsolutePath().toString(),
+                outputNameHint);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(job);
     }
 

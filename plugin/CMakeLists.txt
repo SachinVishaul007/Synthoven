@@ -46,6 +46,10 @@ target_sources(ChopPlugin PRIVATE
     Source/MelSpectrogramExtractor.cpp
     Source/ClapModelManager.cpp)
 
+# Embed image assets (the Chop logo) directly into the binary so they ship with
+# the plugin/standalone — no external file dependency at runtime.
+juce_add_binary_data(ChopAssets SOURCES Resources/chop_logo.png)
+
 target_compile_definitions(ChopPlugin PUBLIC
     JUCE_WEB_BROWSER=0
     # On Linux, set JUCE_USE_CURL=1 and link curl for networking. macOS/Windows
@@ -56,6 +60,7 @@ target_compile_definitions(ChopPlugin PUBLIC
 
 target_link_libraries(ChopPlugin
     PRIVATE
+        ChopAssets
         juce::juce_audio_utils
         juce::juce_audio_processors
         juce::juce_gui_extra

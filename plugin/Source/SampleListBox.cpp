@@ -287,13 +287,29 @@ void SampleListBox::beginExternalDragForRow (int row)
 
     const auto sample = samples.getReference (row);
 
+    // A compact single-item drag image so the cursor shows just this one file,
+    // not a snapshot of the whole list (which looked like many files selected).
+    auto makeDragImage = [] (const juce::String& name)
+    {
+        juce::Image img (juce::Image::ARGB, 220, 26, true);
+        juce::Graphics g (img);
+        g.setColour (juce::Colour (0xff19c3b3).withAlpha (0.92f));
+        g.fillRoundedRectangle (img.getBounds().toFloat(), 4.0f);
+        g.setColour (juce::Colour (0xff0b1f1d));
+        g.setFont (juce::Font (juce::FontOptions (12.0f).withStyle ("Bold")));
+        g.drawText (name, 10, 0, img.getWidth() - 20, img.getHeight(),
+                    juce::Justification::centredLeft, true);
+        return juce::ScaledImage (img);
+    };
+
     if (sample.localFilePath.isNotEmpty())
     {
         if (onStatus) onStatus ("Dragging \"" + sample.name + "\"");
-        juce::StringArray paths;
-        paths.add (sample.localFilePath);
-        juce::DragAndDropContainer::performExternalDragDropOfFiles (
-            paths, /*canMoveFiles*/ false, this);
+        // Internal JUCE drag carrying the file path. In-app targets (e.g. the
+        // audio-to-audio source zone) receive it; if dragged out of the window,
+        // the editor's shouldDropFilesWhenDraggedExternally exports it to the DAW.
+        if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor (this))
+            container->startDragging (sample.localFilePath, this, makeDragImage (sample.name), true);
         return;
     }
 
@@ -308,10 +324,8 @@ void SampleListBox::beginExternalDragForRow (int row)
     if (file.existsAsFile())
     {
         if (onStatus) onStatus ("Dragging \"" + sample.name + "\"");
-        juce::StringArray paths;
-        paths.add (file.getFullPathName());
-        juce::DragAndDropContainer::performExternalDragDropOfFiles (
-            paths, /*canMoveFiles*/ false, this);
+        if (auto* container = juce::DragAndDropContainer::findParentDragContainerFor (this))
+            container->startDragging (file.getFullPathName(), this, makeDragImage (sample.name), true);
     }
     else if (onStatus)
     {

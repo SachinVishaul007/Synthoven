@@ -60,7 +60,7 @@ public class LocalStableAudioClient {
             @Value("${chop.generation.localstableaudio.hf-token}") String hfToken,
             @Value("${chop.generation.localstableaudio.timeout-ms}") long timeoutMs) {
         this.fileStore = fileStore;
-        this.uvPath = expandHome(uvPath);
+        this.uvPath = resolveUvExecutable(uvPath);
         this.repoDir = expandHome(repoDir);
         this.model = model;
         this.durationSeconds = durationSeconds;
@@ -80,23 +80,33 @@ public class LocalStableAudioClient {
     }
 
     public List<Sample> generate(String prompt, int count, Double requestedDuration, Double requestedCfg) {
-        return generate(prompt, count, requestedDuration, requestedCfg, null);
+        return generate(prompt, count, requestedDuration, requestedCfg, null, null);
+    }
+
+    public List<Sample> generate(String prompt, int count, Double requestedDuration, Double requestedCfg, String initAudioPath) {
+        return generate(prompt, count, requestedDuration, requestedCfg, initAudioPath, null);
     }
 
     /**
      * @param requestedDuration desired length in seconds (configured default when null)
      * @param requestedCfg      CFG / "creativity" scale (configured default when null)
      * @param initAudioPath     path to the initial audio file for audio-to-audio generation (optional)
+     * @param nameHint          base name for the generated files (e.g. "&lt;source&gt;_generated");
+     *                          falls back to a slug of the prompt when null/blank
      */
-    public List<Sample> generate(String prompt, int count, Double requestedDuration, Double requestedCfg, String initAudioPath) {
+    public List<Sample> generate(String prompt, int count, Double requestedDuration, Double requestedCfg,
+                                 String initAudioPath, String nameHint) {
         double dur = requestedDuration != null && requestedDuration > 0 ? requestedDuration : durationSeconds;
         double cfg = requestedCfg != null && requestedCfg > 0 ? requestedCfg : cfgScale;
         log.info("[local-sa3] Generating {} sample(s) (duration={}s, cfg={}, initAudioPath={}) for prompt: {}",
                 count, dur, cfg, initAudioPath, prompt);
 
+        String baseName = (nameHint != null && !nameHint.isBlank()) ? slug(nameHint) : slug(prompt);
+
         List<Sample> samples = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            String name = slug(prompt) + "_" + (i + 1);
+            // Single result keeps the clean base name; multiple get a _N suffix.
+            String name = count > 1 ? baseName + "_" + (i + 1) : baseName;
             Path out;
             try {
                 out = fileStore.reserve(name, "wav");
@@ -212,5 +222,59 @@ public class LocalStableAudioClient {
             return System.getProperty("user.home") + path.substring(1);
         }
         return path;
+    }
+
+    /**
+     * Resolves the {@code uv} executable dynamically so the app runs on any
+     * machine regardless of where uv is installed. Resolution order:
+     *   1) the configured path (env {@code LOCAL_SA_UV_PATH} / properties), if it exists;
+     *   2) {@code uv} found on the {@code PATH};
+     *   3) common install locations (~/.local/bin, Homebrew, /usr/local, /usr/bin);
+     * finally falling back to a bare {@code uv}/{@code uv.exe} for ProcessBuilder
+     * to resolve. This avoids hardcoding a machine-specific absolute path.
+     */
+    private static String resolveUvExecutable(String configured) {
+        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        String exe = windows ? "uv.exe" : "uv";
+
+        List<String> candidates = new ArrayList<>();
+        if (configured != null && !configured.isBlank()) {
+            candidates.add(expandHome(configured));
+        }
+        String pathEnv = System.getenv("PATH");
+        if (pathEnv != null) {
+            for (String dir : pathEnv.split(java.io.File.pathSeparator)) {
+                if (!dir.isBlank()) {
+                    candidates.add(dir + java.io.File.separator + exe);
+                }
+            }
+        }
+        String home = System.getProperty("user.home", "");
+        candidates.add(home + "/.local/bin/" + exe);
+        candidates.add("/opt/homebrew/bin/" + exe);
+        candidates.add("/usr/local/bin/" + exe);
+        candidates.add("/usr/bin/" + exe);
+        if (windows) {
+            String localAppData = System.getenv("LOCALAPPDATA");
+            if (localAppData != null) {
+                candidates.add(localAppData + "\\Microsoft\\WinGet\\Links\\" + exe);
+            }
+        }
+
+        for (String c : candidates) {
+            try {
+                Path p = Path.of(c);
+                if (Files.isRegularFile(p) && Files.isExecutable(p)) {
+                    log.info("[local-sa3] Using uv executable: {}", p);
+                    return p.toString();
+                }
+            } catch (Exception ignored) {
+                // skip malformed candidate paths
+            }
+        }
+
+        log.warn("[local-sa3] uv executable not found (configured='{}'); falling back to '{}' on PATH",
+                configured, exe);
+        return exe;
     }
 }

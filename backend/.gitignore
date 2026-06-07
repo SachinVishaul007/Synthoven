@@ -22,6 +22,11 @@ Thumbs.db
 *.log
 logs/
 
+# Local H2 database (runtime data, rebuilt on scan)
+data/
+*.mv.db
+*.trace.db
+
 # Local config / secrets
 *.env
 .env

@@ -3,7 +3,8 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 class AudioInputDropTarget : public juce::Component,
-                             public juce::FileDragAndDropTarget
+                             public juce::FileDragAndDropTarget,
+                             public juce::DragAndDropTarget
 {
 public:
     AudioInputDropTarget()
@@ -41,15 +42,22 @@ public:
 
     std::function<void (const juce::File&)> onFileChanged;
 
-    // ── FileDragAndDropTarget ───────────────────────────────────────────────
+    /** Resolves an internal "ChopLocalFile" drag (from the folder tree) to a file.
+        Set by the editor to return the tree's currently dragged/selected file. */
+    std::function<juce::File()> resolveTreeFile;
+
+    static bool isAudioFile (const juce::File& file)
+    {
+        auto ext = file.getFileExtension().toLowerCase().removeCharacters (".");
+        return ext == "wav" || ext == "mp3" || ext == "aiff" || ext == "aif" || ext == "flac";
+    }
+
+    // ── FileDragAndDropTarget (external / Finder drags) ─────────────────────
     bool isInterestedInFileDrag (const juce::StringArray& files) override
     {
         for (auto& f : files)
-        {
-            auto ext = juce::File (f).getFileExtension().toLowerCase();
-            if (ext == "wav" || ext == "mp3" || ext == "aiff" || ext == "aif" || ext == "flac")
+            if (isAudioFile (juce::File (f)))
                 return true;
-        }
         return false;
     }
 
@@ -71,13 +79,51 @@ public:
         for (auto& f : files)
         {
             juce::File file (f);
-            auto ext = file.getFileExtension().toLowerCase();
-            if (ext == "wav" || ext == "mp3" || ext == "aiff" || ext == "aif" || ext == "flac")
+            if (isAudioFile (file))
             {
                 setInputFile (file);
                 break;
             }
         }
+        repaint();
+    }
+
+    // ── DragAndDropTarget (internal app drags: sample list & folder tree) ────
+    juce::File fileFromDragDescription (const juce::var& description) const
+    {
+        const auto desc = description.toString();
+        if (desc == "ChopLocalFile")              // folder-tree drag
+            return resolveTreeFile ? resolveTreeFile() : juce::File();
+        if (juce::File::isAbsolutePath (desc))    // sample-list drag (carries path)
+            return juce::File (desc);
+        return {};
+    }
+
+    bool isInterestedInDragSource (const SourceDetails& details) override
+    {
+        return isAudioFile (fileFromDragDescription (details.description));
+    }
+
+    void itemDragEnter (const SourceDetails&) override
+    {
+        isHovering = true;
+        repaint();
+    }
+
+    void itemDragExit (const SourceDetails&) override
+    {
+        isHovering = false;
+        repaint();
+    }
+
+    void itemDropped (const SourceDetails& details) override
+    {
+        isHovering = false;
+        auto file = fileFromDragDescription (details.description);
+        if (isAudioFile (file) && file.existsAsFile())
+            setInputFile (file);
+        else
+            repaint();
     }
 
     void paint (juce::Graphics& g) override

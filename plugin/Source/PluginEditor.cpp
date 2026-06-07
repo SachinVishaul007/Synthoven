@@ -1,4 +1,5 @@
 #include "PluginEditor.h"
+#include "BinaryData.h"
 
 ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     : AudioProcessorEditor (&p),
@@ -9,12 +10,14 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
       fileTree (directoryList),
       waveformPreview (p)
 {
-    titleLabel.setText ("CHOP", juce::dontSendNotification);
-    titleLabel.setFont (juce::Font (juce::FontOptions (20.0f).withStyle ("Bold")));
-    titleLabel.setColour (juce::Label::textColourId, juce::Colour (0xffe0a458));
-    titleLabel.setTitle ("Chop Sample Browser Title");
-    titleLabel.setDescription ("Application Header");
-    addAndMakeVisible (titleLabel);
+    logoComponent.setImage (juce::ImageCache::getFromMemory (BinaryData::chop_logo_png,
+                                                             BinaryData::chop_logo_pngSize));
+    // Scale to fit the header height, preserve aspect ratio, anchored left-middle.
+    logoComponent.setImagePlacement (juce::RectanglePlacement (juce::RectanglePlacement::xLeft
+                                                               | juce::RectanglePlacement::yMid));
+    logoComponent.setTitle ("Chop");
+    logoComponent.setDescription ("Chop application logo");
+    addAndMakeVisible (logoComponent);
 
     searchBox.setTextToShowWhenEmpty ("Search samples, e.g. punchy techno kick",
                                       juce::Colours::white.withAlpha (0.4f));
@@ -31,7 +34,7 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
 
     addAndMakeVisible (searchButton);
 
-    semanticSearchToggle.setButtonText ("AI Search");
+    semanticSearchToggle.setButtonText ("Mood");
     semanticSearchToggle.setToggleState (processorRef.isSemanticSearchEnabled(), juce::dontSendNotification);
     semanticSearchToggle.onClick = [this]
     {
@@ -40,8 +43,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     };
     semanticSearchToggle.setColour (juce::ToggleButton::textColourId, juce::Colours::white.withAlpha (0.9f));
     semanticSearchToggle.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xffe0a458));
-    semanticSearchToggle.setTitle ("AI Search Toggle");
-    semanticSearchToggle.setDescription ("Enable to run an AI-based semantic search instead of classic keyword matching");
+    semanticSearchToggle.setTitle ("Mood Toggle");
+    semanticSearchToggle.setDescription ("Enable to search by mood/meaning (AI semantic search) instead of classic keyword matching");
     addAndMakeVisible (semanticSearchToggle);
 
     for (const auto& tag : tags)
@@ -88,6 +91,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     promptEditor.setTitle ("Text Prompt Editor");
     promptEditor.setDescription ("Type text description of the sound to generate");
     promptEditor.setHelpText ("e.g. warm analog bass");
+    // Enable/disable the prompt button as text is typed/cleared.
+    promptEditor.onTextChange = [this] { updateGenerateButtons(); };
     addAndMakeVisible (promptEditor);
 
     sectionHeader (durationHeaderLabel, "MAX DURATION");
@@ -114,6 +119,18 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     durationValueLabel.setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (durationValueLabel);
 
+    sectionHeader (variationsHeaderLabel, "VARIATIONS");
+    addAndMakeVisible (variationsHeaderLabel);
+
+    for (int i = 1; i <= 8; ++i)
+        variationsCombo.addItem (juce::String (i), i);
+    variationsCombo.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff202024));
+    variationsCombo.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xff34343c));
+    variationsCombo.setSelectedId (4, juce::dontSendNotification);
+    variationsCombo.setTitle ("Variations Count");
+    variationsCombo.setDescription ("How many different variations to generate each time you click Generate");
+    addAndMakeVisible (variationsCombo);
+
     sectionHeader (audioInputHeaderLabel, "SOURCE AUDIO (FOR AUDIO-TO-AUDIO)");
     audioInputHeaderLabel.setTitle ("Source Audio Label");
     audioInputHeaderLabel.setDescription ("Label for the audio-to-audio drag and drop input field");
@@ -121,14 +138,28 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
 
     audioInputDropTarget.setTitle ("Audio Input Drop Zone");
     audioInputDropTarget.setDescription ("Drag and drop a WAV, MP3, AIFF, or FLAC file here to use it as the source for audio-to-audio generation");
+    // Resolve internal folder-tree drags ("ChopLocalFile") to the dragged file.
+    audioInputDropTarget.resolveTreeFile = [this] { return fileTree.getSelectedFile (0); };
+    // Enable/disable the audio-to-audio button as a source file comes and goes.
+    audioInputDropTarget.onFileChanged = [this] (const juce::File&) { updateGenerateButtons(); };
     addAndMakeVisible (audioInputDropTarget);
 
-    generateSoundButton.onClick = [this] { doGenerate(); };
-    generateSoundButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff19c3b3));
-    generateSoundButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff0b1f1d));
-    generateSoundButton.setTitle ("Generate Sound Button");
-    generateSoundButton.setDescription ("Triggers AI stable audio sample generation with the specified prompt and duration");
-    addAndMakeVisible (generateSoundButton);
+    // Two separate generate actions sharing the same prompt + duration + variations:
+    //  • prompt → text-to-audio (needs prompt text)
+    //  • variations → audio-to-audio (needs a dropped source file)
+    generatePromptButton.onClick = [this] { doGeneratePrompt(); };
+    generatePromptButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff19c3b3));
+    generatePromptButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff0b1f1d));
+    generatePromptButton.setTitle ("Generate From Prompt Button");
+    generatePromptButton.setDescription ("Generates samples from the text prompt (text-to-audio)");
+    addAndMakeVisible (generatePromptButton);
+
+    generateVariationsButton.onClick = [this] { doGenerateVariations(); };
+    generateVariationsButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffe0a458));
+    generateVariationsButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff1f160b));
+    generateVariationsButton.setTitle ("Generate From Audio Button");
+    generateVariationsButton.setDescription ("Generates similar-sounding variations from the dropped source audio (audio-to-audio)");
+    addAndMakeVisible (generateVariationsButton);
 
     // Audio visualizer — a live waveform of whatever is being auditioned.
     sectionHeader (visualizerHeaderLabel, "NOW PLAYING");
@@ -213,6 +244,7 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     fileTree.setColour (juce::DirectoryContentsDisplayComponent::highlightedTextColourId, juce::Colours::white);
 
     fileTree.addListener (this);
+    fileTree.setMultiSelectEnabled (false); // one source file at a time for audio-to-audio
     fileTree.setDragAndDropDescription ("ChopLocalFile");
     fileTree.setTitle ("Local library folder tree");
     fileTree.setDescription ("Displays directory structure of the loaded local samples folder, allowing selection of folders to display");
@@ -240,6 +272,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     }
 
     setTabMode (TabMode::MySounds);
+
+    updateGenerateButtons(); // initial enabled/disabled state
 
     startTimer (100);
     setSize (1180, 560);
@@ -482,7 +516,15 @@ void ChopAudioProcessorEditor::showSettingsPopup()
                                             nullptr);
 }
 
-void ChopAudioProcessorEditor::doGenerate()
+void ChopAudioProcessorEditor::updateGenerateButtons()
+{
+    generatePromptButton.setEnabled (! isGenerating
+                                     && promptEditor.getText().trim().isNotEmpty());
+    generateVariationsButton.setEnabled (! isGenerating
+                                         && audioInputDropTarget.getInputFile().existsAsFile());
+}
+
+void ChopAudioProcessorEditor::doGeneratePrompt()
 {
     const auto prompt = promptEditor.getText().trim();
     if (prompt.isEmpty())
@@ -492,68 +534,96 @@ void ChopAudioProcessorEditor::doGenerate()
     }
 
     const double duration = durationSlider.getValue();
-    // Fixed CFG scale tuned for good prompt adherence without over-constraining.
-    const double cfgScale = 3.0;
-    const juce::String category; // category control removed; rely on the prompt alone
+    const double cfgScale = 3.0; // fixed; good prompt adherence without over-constraining
+    const juce::String category;
+    const int numVariations = juce::jlimit (1, 8, variationsCombo.getSelectedId());
 
+    isGenerating = true;
+    updateGenerateButtons();
+    // No source audio → text-to-audio.
+    generateAudioVariations (prompt, duration, cfgScale, category, juce::File(), numVariations, 1);
+}
+
+void ChopAudioProcessorEditor::doGenerateVariations()
+{
     const auto initAudio = audioInputDropTarget.getInputFile();
-    if (initAudio.existsAsFile())
+    if (! initAudio.existsAsFile())
     {
-        setStatus ("Generating similar sound (" + juce::String (duration, 1)
-                   + "s) using audio input…");
-        generateSoundButton.setEnabled (false);
-
-        juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
-        processorRef.getApiClient().generateAudioToAudio (prompt, duration, cfgScale, category, initAudio,
-            [safe, prompt] (ChopApiClient::JobResult result, juce::String error)
-        {
-            if (safe == nullptr)
-                return;
-
-            safe->generateSoundButton.setEnabled (true);
-
-            if (error.isNotEmpty())
-            {
-                safe->setStatus ("Generation failed: " + error);
-                return;
-            }
-
-            auto folder = safe->processorRef.getGeneratedFolder();
-            safe->processorRef.triggerLibraryScan();
-            safe->loadGeneratedSamples();
-
-            safe->setStatus ("Generated similar sample(s) for \"" + prompt + "\"");
-        });
+        setStatus ("Drop a source audio file first to generate a similar sound");
+        return;
     }
+
+    // Audio-to-audio shares the same prompt field (optional guidance).
+    const auto prompt = promptEditor.getText().trim();
+    const double duration = durationSlider.getValue();
+    const double cfgScale = 3.0;
+    const juce::String category;
+    const int numVariations = juce::jlimit (1, 8, variationsCombo.getSelectedId());
+
+    isGenerating = true;
+    updateGenerateButtons();
+    generateAudioVariations (prompt, duration, cfgScale, category, initAudio, numVariations, 1);
+}
+
+void ChopAudioProcessorEditor::generateAudioVariations (const juce::String& prompt, double duration,
+                                                        double cfgScale, const juce::String& category,
+                                                        const juce::File& initAudio, int total, int index)
+{
+    const bool audioToAudio = initAudio.existsAsFile();
+
+    // A human-readable label for status messages (prompt is optional for a2a).
+    const juce::String label = prompt.isNotEmpty() ? ("\"" + prompt + "\"")
+                             : audioToAudio          ? initAudio.getFileName()
+                                                     : juce::String ("sound");
+
+    if (total > 1)
+        setStatus ("Generating " + juce::String (audioToAudio ? "similar sound " : "sample ")
+                   + juce::String (index) + " of " + juce::String (total) + " for " + label + "…");
     else
+        setStatus ((audioToAudio ? juce::String ("Generating a similar sound to ")
+                                 : juce::String ("Generating ")) + label + "…");
+
+    juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
+
+    auto onDone = [safe, label, duration, cfgScale, category, initAudio, total, index]
+                  (ChopApiClient::JobResult result, juce::String error)
     {
-        setStatus ("Generating \"" + prompt + "\" (" + juce::String (duration, 1)
-                   + "s)… this can take a little while");
-        generateSoundButton.setEnabled (false);
+        juce::ignoreUnused (result);
+        if (safe == nullptr)
+            return;
 
-        juce::Component::SafePointer<ChopAudioProcessorEditor> safe (this);
-        processorRef.getApiClient().generate (prompt, duration, cfgScale, category,
-            [safe, prompt] (ChopApiClient::JobResult result, juce::String error)
+        if (error.isNotEmpty())
         {
-            if (safe == nullptr)
-                return;
+            safe->isGenerating = false;
+            safe->updateGenerateButtons();
+            safe->setStatus ("Generation failed: " + error);
+            return;
+        }
 
-            safe->generateSoundButton.setEnabled (true);
+        safe->processorRef.triggerLibraryScan();
+        safe->loadGeneratedSamples();
 
-            if (error.isNotEmpty())
-            {
-                safe->setStatus ("Generation failed: " + error);
-                return;
-            }
+        if (index < total)
+        {
+            // Next variation: same prompt + source, fresh random seed on the backend.
+            safe->generateAudioVariations (safe->promptEditor.getText().trim(), duration, cfgScale,
+                                           category, initAudio, total, index + 1);
+        }
+        else
+        {
+            safe->isGenerating = false;
+            safe->updateGenerateButtons();
+            const bool a2a = initAudio.existsAsFile();
+            const juce::String noun = a2a ? (total == 1 ? "similar sound" : "similar sounds")
+                                          : (total == 1 ? "sample" : "samples");
+            safe->setStatus ("Generated " + juce::String (total) + " " + noun + " for " + label);
+        }
+    };
 
-            auto folder = safe->processorRef.getGeneratedFolder();
-            safe->processorRef.triggerLibraryScan();
-            safe->loadGeneratedSamples();
-
-            safe->setStatus ("Generated " + juce::String (result.samples.size())
-                             + " sample(s) for \"" + prompt + "\"");
-        });
-    }
+    if (audioToAudio)
+        processorRef.getApiClient().generateAudioToAudio (prompt, duration, cfgScale, category, initAudio, onDone);
+    else
+        processorRef.getApiClient().generate (prompt, duration, cfgScale, category, onDone);
 }
 
 
@@ -611,12 +681,14 @@ void ChopAudioProcessorEditor::resized()
         tabFavorites.setBounds (leftPane.removeFromTop (32));
     }
 
-    // Centre pane: top bar (title + search + AI toggle), tag row, results list
-    auto top = centrePane.removeFromTop (32);
-    titleLabel.setBounds (top.removeFromLeft (70));
-    searchButton.setBounds (top.removeFromRight (66).reduced (2, 0));
-    semanticSearchToggle.setBounds (top.removeFromRight (85).reduced (2, 0));
-    searchBox.setBounds (top.reduced (2, 0));
+    // Centre pane: top bar (logo + search + Mood toggle), tag row, results list.
+    // Slightly taller so the logo reads clearly; controls are vertically centred.
+    auto top = centrePane.removeFromTop (44);
+    logoComponent.setBounds (top.removeFromLeft (110).reduced (0, 2));
+    top.removeFromLeft (8); // spacer after logo
+    searchButton.setBounds (top.removeFromRight (66).reduced (2, 6));
+    semanticSearchToggle.setBounds (top.removeFromRight (85).reduced (2, 6));
+    searchBox.setBounds (top.reduced (2, 6));
     centrePane.removeFromTop (8); // spacer
 
     // Tag buttons row
@@ -641,13 +713,12 @@ void ChopAudioProcessorEditor::resized()
     if (generatedList) generatedList->setBounds (centrePane);
     if (favoritesList) favoritesList->setBounds (centrePane);
 
-    // Right pane: generation setup panel
+    // Right pane: generation setup panel.
+    // Shared controls (duration + variations) sit up top; each Generate button
+    // is placed directly beneath the input it acts on — prompt button under the
+    // prompt, variations button under the source-audio drop zone.
     genHeaderLabel.setBounds (genPanel.removeFromTop (22));
     genPanel.removeFromTop (8);
-
-    promptHeaderLabel.setBounds (genPanel.removeFromTop (16));
-    promptEditor.setBounds (genPanel.removeFromTop (110));
-    genPanel.removeFromTop (12);
 
     durationHeaderLabel.setBounds (genPanel.removeFromTop (16));
     {
@@ -657,11 +728,20 @@ void ChopAudioProcessorEditor::resized()
     }
     genPanel.removeFromTop (12);
 
-    audioInputHeaderLabel.setBounds (genPanel.removeFromTop (16));
-    audioInputDropTarget.setBounds (genPanel.removeFromTop (36));
+    variationsHeaderLabel.setBounds (genPanel.removeFromTop (16));
+    variationsCombo.setBounds (genPanel.removeFromTop (28));
     genPanel.removeFromTop (12);
 
-    generateSoundButton.setBounds (genPanel.removeFromTop (40));
+    promptHeaderLabel.setBounds (genPanel.removeFromTop (16));
+    promptEditor.setBounds (genPanel.removeFromTop (96));
+    genPanel.removeFromTop (8);
+    generatePromptButton.setBounds (genPanel.removeFromTop (40));
+    genPanel.removeFromTop (12);
+
+    audioInputHeaderLabel.setBounds (genPanel.removeFromTop (16));
+    audioInputDropTarget.setBounds (genPanel.removeFromTop (36));
+    genPanel.removeFromTop (8);
+    generateVariationsButton.setBounds (genPanel.removeFromTop (40));
 }
 
 void ChopAudioProcessorEditor::timerCallback()
@@ -691,9 +771,9 @@ void ChopAudioProcessorEditor::timerCallback()
         const int count = processorRef.getLibraryScannedCount();
         juce::String readyMsg = "Library ready. " + juce::String (count) + " samples indexed.";
         if (modelMgr.isModelLoaded())
-            readyMsg += " AI Search enabled.";
+            readyMsg += " Mood search enabled.";
         else
-            readyMsg += " AI Search disabled.";
+            readyMsg += " Mood search disabled.";
 
         setStatus (readyMsg);
         juce::AccessibilityHandler::postAnnouncement (readyMsg, juce::AccessibilityHandler::AnnouncementPriority::high);
@@ -731,7 +811,21 @@ bool ChopAudioProcessorEditor::shouldDropFilesWhenDraggedExternally (
     const juce::DragAndDropTarget::SourceDetails& sourceDetails,
     juce::StringArray& files, bool& canMoveFiles)
 {
-    juce::ignoreUnused (sourceDetails, files, canMoveFiles);
+    const auto desc = sourceDetails.description.toString();
+
+    juce::File f;
+    if (desc == "ChopLocalFile")                 // folder-tree drag
+        f = fileTree.getSelectedFile (0);
+    else if (juce::File::isAbsolutePath (desc))  // sample-list drag (carries path)
+        f = juce::File (desc);
+
+    if (f.existsAsFile())
+    {
+        files.add (f.getFullPathName());
+        canMoveFiles = false;
+        return true;
+    }
+
     return false;
 }
 
@@ -771,6 +865,11 @@ void ChopAudioProcessorEditor::loadLocalFolder (const juce::File& folder)
 {
     juce::Array<juce::File> foundFiles;
     folder.findChildFiles (foundFiles, juce::File::findFiles, false, "*.wav;*.mp3;*.aif;*.aiff;*.flac");
+
+    // Newest first, so freshly generated/added samples appear at the top.
+    std::sort (foundFiles.begin(), foundFiles.end(), [] (const juce::File& a, const juce::File& b) {
+        return a.getLastModificationTime() > b.getLastModificationTime();
+    });
 
     juce::Array<Sample> localSamples;
     for (auto& f : foundFiles)

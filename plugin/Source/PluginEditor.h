@@ -49,7 +49,16 @@ public:
 
 private:
     void doSearch();
-    void doGenerate();
+    void doGeneratePrompt();      // text-to-audio from the prompt
+    void doGenerateVariations();  // audio-to-audio: variations of the dropped source
+    // Enables each generate button only when its required input is present
+    // (prompt text / source audio) and no generation is in progress.
+    void updateGenerateButtons();
+    // Sequentially generates `total` results (text- or audio-to-audio), one per
+    // run with a fresh backend seed, so each is a distinct variation.
+    void generateAudioVariations (const juce::String& prompt, double duration, double cfgScale,
+                                  const juce::String& category, const juce::File& initAudio,
+                                  int total, int index);
     juce::File getGeneratedFolder() const;
     void loadLocalFolder (const juce::File& folder);
     void setStatus (const juce::String& text);
@@ -62,13 +71,13 @@ private:
     juce::TextEditor  searchBox;
     juce::TextButton  searchButton  { "Search" };
     WaveformPreviewComponent waveformPreview;
-    juce::ToggleButton semanticSearchToggle { "AI Search" };
+    juce::ToggleButton semanticSearchToggle { "Mood" };
 
     std::vector<std::unique_ptr<juce::TextButton>> tagButtons;
     std::vector<juce::String> tags = { "Happy", "Dark", "Sad", "Energetic", "Ambient", "Cinematic", "Punchy" };
     void updateTagHighlighting (const juce::String& activeTag);
 
-    juce::Label       titleLabel;
+    juce::ImageComponent logoComponent; // Chop logo shown in the header (replaces text title)
     juce::Label       statusLabel;
 
     // ── Generation setup panel (right) ─────────────────────────────────────
@@ -78,9 +87,13 @@ private:
     juce::Label       durationHeaderLabel;
     juce::Slider      durationSlider;
     juce::Label       durationValueLabel;
+    juce::Label       variationsHeaderLabel;
+    juce::ComboBox    variationsCombo;
     juce::Label       audioInputHeaderLabel;
     AudioInputDropTarget audioInputDropTarget;
-    juce::TextButton  generateSoundButton { "GENERATE SOUND" };
+    juce::TextButton  generatePromptButton     { "GENERATE FROM TEXT" };
+    juce::TextButton  generateVariationsButton { "GENERATE FROM AUDIO" };
+    bool              isGenerating = false;
 
     // ── Audio visualizer (waveform of the audio being auditioned) ──────────
     juce::Label       visualizerHeaderLabel;
