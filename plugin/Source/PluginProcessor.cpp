@@ -9,6 +9,7 @@ ChopAudioProcessor::ChopAudioProcessor()
     formatManager.registerBasicFormats(); // WAV + AIFF always; FLAC/Ogg if enabled in the build
     readAheadThread.startThread();
     loadEmbeddingCache();
+    loadFavorites();
     modelManager.initialize();
 
     // Configure the audition waveform visualizer.
@@ -88,6 +89,31 @@ void ChopAudioProcessor::stopAudition()
     readerSource.reset();
 }
 
+void ChopAudioProcessor::startPlayback()
+{
+    transport.start();
+}
+
+void ChopAudioProcessor::pausePlayback()
+{
+    transport.stop();
+}
+
+double ChopAudioProcessor::getPlaybackPosition() const
+{
+    return transport.getCurrentPosition();
+}
+
+double ChopAudioProcessor::getPlaybackLength() const
+{
+    return transport.getLengthInSeconds();
+}
+
+void ChopAudioProcessor::setPlaybackPosition (double pos)
+{
+    transport.setPosition (pos);
+}
+
 juce::AudioProcessorEditor* ChopAudioProcessor::createEditor()
 {
     return new ChopAudioProcessorEditor (*this);
@@ -119,10 +145,24 @@ void ChopAudioProcessor::setLibraryFolder (const juce::File& folder)
     triggerLibraryScan();
 }
 
+juce::File ChopAudioProcessor::getGeneratedFolder() const
+{
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory)
+               .getChildFile ("Chop")
+               .getChildFile ("Generated");
+}
+
 void ChopAudioProcessor::triggerLibraryScan()
 {
+    juce::Array<juce::File> foldersToScan;
     if (libraryFolder.isDirectory())
-        scannerThread.startScan (libraryFolder);
+        foldersToScan.add (libraryFolder);
+    auto genFolder = getGeneratedFolder();
+    if (genFolder.isDirectory())
+        foldersToScan.add (genFolder);
+    
+    if (! foldersToScan.isEmpty())
+        scannerThread.startScan (foldersToScan);
 }
 
 void ChopAudioProcessor::setScannedFiles (juce::Array<juce::File> files)
@@ -135,6 +175,70 @@ juce::Array<juce::File> ChopAudioProcessor::getScannedFiles() const
 {
     const juce::ScopedLock sl (localFilesLock);
     return localLibraryFiles;
+}
+
+// ── Favorites ─────────────────────────────────────────────────────────────
+
+juce::File ChopAudioProcessor::getFavoritesFile() const
+{
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory)
+               .getChildFile ("Chop")
+               .getChildFile ("favorites.json");
+}
+
+void ChopAudioProcessor::loadFavorites()
+{
+    juce::File f = getFavoritesFile();
+    if (! f.existsAsFile()) return;
+
+    if (auto parsed = juce::JSON::parse (f))
+    {
+        if (auto* arr = parsed.getArray())
+        {
+            const juce::ScopedLock sl (favoritesLock);
+            favoritePaths.clear();
+            for (auto& v : *arr)
+                favoritePaths.add (v.toString());
+        }
+    }
+}
+
+void ChopAudioProcessor::saveFavorites()
+{
+    juce::var arr (juce::Array<juce::var>{});
+    {
+        const juce::ScopedLock sl (favoritesLock);
+        for (const auto& path : favoritePaths)
+            arr.append (path);
+    }
+    
+    juce::File f = getFavoritesFile();
+    f.getParentDirectory().createDirectory();
+    f.replaceWithText (juce::JSON::toString (arr));
+}
+
+bool ChopAudioProcessor::isFavorite (const juce::String& absolutePath) const
+{
+    const juce::ScopedLock sl (favoritesLock);
+    return favoritePaths.contains (absolutePath);
+}
+
+void ChopAudioProcessor::toggleFavorite (const juce::String& absolutePath)
+{
+    {
+        const juce::ScopedLock sl (favoritesLock);
+        if (favoritePaths.contains (absolutePath))
+            favoritePaths.removeString (absolutePath);
+        else
+            favoritePaths.add (absolutePath);
+    }
+    saveFavorites();
+}
+
+juce::StringArray ChopAudioProcessor::getFavoritePaths() const
+{
+    const juce::ScopedLock sl (favoritesLock);
+    return favoritePaths;
 }
 
 // ── Embedding Caching and ML Search Implementations ───────────────────────
@@ -282,7 +386,14 @@ juce::Array<juce::File> ChopAudioProcessor::performSearch (const juce::String& q
         bool hasEmbedding = false;
         if (useSemantic)
         {
-            juce::String relPath = getRelativePath (file, libraryFolder);
+            juce::String relPath;
+            if (file.isAChildOf (libraryFolder))
+                relPath = getRelativePath (file, libraryFolder);
+            else if (file.isAChildOf (getGeneratedFolder()))
+                relPath = "GEN::" + getRelativePath (file, getGeneratedFolder());
+            else
+                relPath = file.getFullPathName();
+            
             const juce::ScopedLock sl (cacheLock);
             auto it = embeddingCache.find (relPath);
             if (it != embeddingCache.end())

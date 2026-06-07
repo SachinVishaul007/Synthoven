@@ -1,0 +1,82 @@
+# Sample List Waveform Previews, Static Waveform & Transport Controls
+
+Introduce rich visual styling and interactive playback features in the plugin interface, making it look and feel like a modern DAW component.
+
+## User Review Required
+> [!IMPORTANT]
+> The tiny waveform previews in the sample list rows are generated dynamically and deterministically using the sample name and properties. This avoids heavy asynchronous disk I/O or background thread pools that could cause UI lag or audio clicks while scrolling through thousands of files.
+
+## Proposed Changes
+
+### 1. Audio Processor Interface Extensions
+
+#### [MODIFY] [PluginProcessor.h](file:///d:/Rohan/Antigravity/Synthoven_Fresh/plugin/Source/PluginProcessor.h)
+- Add a public getter for `formatManager` so it can be accessed by the new waveform preview component.
+- Add helpers for controlling/querying transport playback position and state:
+  - `void startPlayback()` -> calls `transport.start()`
+  - `void pausePlayback()` -> calls `transport.stop()`
+  - `double getPlaybackPosition()` -> calls `transport.getCurrentPosition()`
+  - `double getPlaybackLength()` -> calls `transport.getLengthInSeconds()`
+  - `void setPlaybackPosition(double pos)` -> calls `transport.setPosition(pos)`
+
+#### [MODIFY] [PluginProcessor.cpp](file:///d:/Rohan/Antigravity/Synthoven_Fresh/plugin/Source/PluginProcessor.cpp)
+- Implement the transport control helpers.
+
+---
+
+### 2. Custom Waveform Preview Component
+
+#### [NEW] [WaveformPreviewComponent.h](file:///d:/Rohan/Antigravity/Synthoven_Fresh/plugin/Source/WaveformPreviewComponent.h)
+- Implement a custom `WaveformPreviewComponent` inheriting from `juce::Component`, `juce::ChangeListener`, and `juce::Timer`.
+- Features:
+  - `juce::AudioThumbnail` and `juce::AudioThumbnailCache` for drawing the complete static audio wave.
+  - Gradient/colorful static waveform drawing with a white vertical playhead line moving along the track.
+  - Scrubbing support: clicking or dragging on the waveform calculates the position and updates the transport position.
+  - Integration of Play (▶) and Pause (⏸) text/symbol buttons.
+  - Detailed metadata label: Format, Sample Rate (kHz), Channels (Stereo/Mono), and exact Duration.
+
+---
+
+### 3. Sample List & Row Styling
+
+#### [MODIFY] [SampleListBox.h](file:///d:/Rohan/Antigravity/Synthoven_Fresh/plugin/Source/SampleListBox.h)
+- Change row height of list items from `44` to `56` to give ample spacing for larger text and bubble chips.
+
+#### [MODIFY] [SampleListBox.cpp](file:///d:/Rohan/Antigravity/Synthoven_Fresh/plugin/Source/SampleListBox.cpp)
+- Update `SampleListBox` row height setting to `56`.
+- Redesign `SampleRowComponent::paint()`:
+  - Increase name text size to `14.0f` and apply bold style for distinctiveness.
+  - Calculate and draw a deterministic envelope waveform preview using the name hash (width `70px`, height `20px`) next to the heart button.
+  - Draw mood tags/attributes below the name as small rounded bubble chips (translucent background, white text).
+  - Adjust metadata and heart button alignment.
+
+---
+
+### 4. Main Editor Integration
+
+#### [MODIFY] [PluginEditor.h](file:///d:/Rohan/Antigravity/Synthoven_Fresh/plugin/Source/PluginEditor.h)
+- Include `#include "WaveformPreviewComponent.h"`
+- Replace the `juce::TextButton stopButton` with the new `WaveformPreviewComponent waveformPreview` member variable.
+
+#### [MODIFY] [PluginEditor.cpp](file:///d:/Rohan/Antigravity/Synthoven_Fresh/plugin/Source/PluginEditor.cpp)
+- Remove all setup, event listeners, and layout lines for `stopButton`.
+- Replace `processorRef.getVisualiser()` inside `resized()` and construction with `waveformPreview`.
+- Update the `onAudition` list callbacks to invoke `waveformPreview.setSampleFile(f)` to automatically render the static waveform and populate metadata.
+
+## Verification Plan
+
+### Automated Build Verification
+- Compile the VST3 and Standalone plugin using CMake.
+  ```powershell
+  cmake --build build --config Release
+  ```
+
+### Manual Verification
+- Launch the standalone application.
+- Select a sample folder and audition files.
+- Verify that:
+  - Each sample row displays a unique envelope waveform preview and tag bubbles under a larger, bolder name.
+  - The bottom section displays a colorful static waveform of the loaded file with a moving playhead line.
+  - Detailed sample rate, format, channels, and length metadata are visible.
+  - The Play and Pause buttons control playback.
+  - Scrubbing (clicking/dragging on the waveform) updates the playhead position and playback position.

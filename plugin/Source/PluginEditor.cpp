@@ -6,7 +6,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
       folderFilter(),
       fileScannerThread ("ChopFileScanner"),
       directoryList (&folderFilter, fileScannerThread),
-      fileTree (directoryList)
+      fileTree (directoryList),
+      waveformPreview (p)
 {
     titleLabel.setText ("CHOP", juce::dontSendNotification);
     titleLabel.setFont (juce::Font (juce::FontOptions (20.0f).withStyle ("Bold")));
@@ -28,12 +29,7 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     searchButton.setTitle ("Search Button");
     searchButton.setDescription ("Executes text or semantic search depending on toggle state");
 
-    stopButton.onClick   = [this] { processorRef.stopAudition(); setStatus ("Stopped"); };
-    stopButton.setTitle ("Stop Button");
-    stopButton.setDescription ("Stops auditioning/playing back the selected sample");
-
     addAndMakeVisible (searchButton);
-    addAndMakeVisible (stopButton);
 
     semanticSearchToggle.setButtonText ("AI Search");
     semanticSearchToggle.setToggleState (processorRef.isSemanticSearchEnabled(), juce::dontSendNotification);
@@ -130,7 +126,7 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     visualizerHeaderLabel.setTitle ("Now Playing Waveform Visualizer");
     visualizerHeaderLabel.setDescription ("Displays the real-time waveform of the currently playing or auditioned audio sample");
     addAndMakeVisible (visualizerHeaderLabel);
-    addAndMakeVisible (processorRef.getVisualiser());
+    addAndMakeVisible (waveformPreview);
 
     statusLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.6f));
     statusLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
@@ -139,23 +135,49 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
     addAndMakeVisible (statusLabel);
 
     list = std::make_unique<SampleListBox> (processorRef);
-    list->onAudition = [this] (const Sample& s)
-    {
-        if (s.localFilePath.isNotEmpty())
-        {
-            juce::File f (s.localFilePath);
-            if (f.existsAsFile())
-            {
-                processorRef.auditionFile (f);
-                setStatus ("Playing local file: " + s.name);
+    auto setupList = [this](std::unique_ptr<SampleListBox>& lst) {
+        if (!lst) lst = std::make_unique<SampleListBox> (processorRef);
+        lst->onAudition = [this] (const Sample& s) {
+            if (s.localFilePath.isNotEmpty()) {
+                juce::File f (s.localFilePath);
+                if (f.existsAsFile()) {
+                    processorRef.auditionFile (f);
+                    waveformPreview.setSampleFile (f);
+                    setStatus ("Playing local file: " + s.name);
+                }
             }
-            return;
-        }
+        };
+        lst->onStatus = [this] (const juce::String& s) { setStatus (s); };
+        lst->onFavoriteToggled = [this] (const Sample& s) {
+            if (currentTab == TabMode::Favorites) loadFavoriteSamples();
+            list->repaint();
+            if (generatedList) generatedList->repaint();
+        };
+        addChildComponent (*lst);
     };
-    list->onStatus = [this] (const juce::String& s) { setStatus (s); };
-    list->setTitle ("Sample list");
-    list->setDescription ("Displays the list of matched local and generated samples");
-    addAndMakeVisible (*list);
+
+    setupList (list);
+    list->setVisible (true); // Center list is always visible
+    setupList (generatedList);
+    setupList (favoritesList);
+
+    // Sidebar Tab Buttons
+    auto setupTabButton = [this](juce::TextButton& btn, TabMode mode) {
+        btn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1c1c20));
+        btn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffe0a458));
+        btn.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha(0.7f));
+        btn.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
+        btn.onClick = [this, mode] { setTabMode (mode); };
+        addAndMakeVisible (btn);
+    };
+    setupTabButton (tabMySounds, TabMode::MySounds);
+    setupTabButton (tabGenerated, TabMode::Generated);
+    setupTabButton (tabFavorites, TabMode::Favorites);
+
+    settingsButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff202024));
+    settingsButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha(0.8f));
+    settingsButton.onClick = [this] { showSettingsPopup(); };
+    addAndMakeVisible (settingsButton);
 
     // Setup local library browser components
     selectFolderButton.onClick = [this] { selectLibraryFolder(); };
@@ -208,6 +230,8 @@ ChopAudioProcessorEditor::ChopAudioProcessorEditor (ChopAudioProcessor& p)
         }
     }
 
+    setTabMode (TabMode::MySounds);
+
     startTimer (100);
     setSize (1180, 560);
 }
@@ -233,6 +257,8 @@ void ChopAudioProcessorEditor::doSearch()
 
     setStatus ("Searching local library for \"" + query + "\"…");
 
+    setTabMode (TabMode::MySounds);
+
     auto matchedFiles = processorRef.performSearch (query);
     juce::Array<Sample> matchedSamples;
 
@@ -254,12 +280,197 @@ void ChopAudioProcessorEditor::doSearch()
     juce::AccessibilityHandler::postAnnouncement ("Search completed. " + searchResult, juce::AccessibilityHandler::AnnouncementPriority::high);
 }
 
-juce::File ChopAudioProcessorEditor::getGeneratedFolder() const
+void ChopAudioProcessorEditor::setTabMode (TabMode newMode)
 {
-    // Mirrors the backend default chop.generation.output-path (~/Music/Chop/Generated).
-    return juce::File::getSpecialLocation (juce::File::userMusicDirectory)
-               .getChildFile ("Chop")
-               .getChildFile ("Generated");
+    currentTab = newMode;
+    
+    tabMySounds.setToggleState (newMode == TabMode::MySounds, juce::dontSendNotification);
+    tabGenerated.setToggleState (newMode == TabMode::Generated, juce::dontSendNotification);
+    tabFavorites.setToggleState (newMode == TabMode::Favorites, juce::dontSendNotification);
+
+    fileTree.setVisible (newMode == TabMode::MySounds);
+    selectFolderButton.setVisible (newMode == TabMode::MySounds);
+    refreshButton.setVisible (newMode == TabMode::MySounds);
+
+    if (generatedList) generatedList->setVisible (newMode == TabMode::Generated);
+    if (favoritesList) favoritesList->setVisible (newMode == TabMode::Favorites);
+
+    if (newMode == TabMode::Generated)
+        loadGeneratedSamples();
+    else if (newMode == TabMode::Favorites)
+        loadFavoriteSamples();
+        
+    resized();
+}
+
+void ChopAudioProcessorEditor::loadGeneratedSamples()
+{
+    auto folder = processorRef.getGeneratedFolder();
+    juce::Array<juce::File> foundFiles;
+    folder.findChildFiles (foundFiles, juce::File::findFiles, false, "*.wav;*.mp3;*.aif;*.aiff;*.flac");
+
+    std::sort (foundFiles.begin(), foundFiles.end(), [] (const juce::File& a, const juce::File& b) {
+        return a.getLastModificationTime() > b.getLastModificationTime();
+    });
+
+    juce::Array<Sample> samples;
+    for (auto& f : foundFiles)
+    {
+        Sample s;
+        s.id = -1;
+        s.name = f.getFileNameWithoutExtension();
+        s.type = "GENERATED";
+        s.format = f.getFileExtension().removeCharacters (".");
+        s.localFilePath = f.getFullPathName();
+        s.durationMs = 0;
+        samples.add (s);
+    }
+    if (generatedList) generatedList->setSamples (samples);
+}
+
+void ChopAudioProcessorEditor::loadFavoriteSamples()
+{
+    juce::StringArray favs = processorRef.getFavoritePaths();
+    juce::Array<Sample> samples;
+    for (const auto& path : favs)
+    {
+        juce::File f (path);
+        if (f.existsAsFile())
+        {
+            Sample s;
+            s.id = -1;
+            s.name = f.getFileNameWithoutExtension();
+            s.type = "FAVORITE";
+            s.format = f.getFileExtension().removeCharacters (".");
+            s.localFilePath = f.getFullPathName();
+            s.durationMs = 0;
+            samples.add (s);
+        }
+    }
+    if (favoritesList) favoritesList->setSamples (samples);
+}
+
+class SettingsPopupComponent : public juce::Component
+{
+public:
+    SettingsPopupComponent (ChopAudioProcessor& p, ChopAudioProcessorEditor& editor)
+        : processor (p), editorRef (editor)
+    {
+        setSize (340, 240);
+
+        headerLabel.setText ("PLUGIN CONFIGURATION", juce::dontSendNotification);
+        headerLabel.setFont (juce::Font (juce::FontOptions (14.0f).withStyle ("Bold")));
+        headerLabel.setColour (juce::Label::textColourId, juce::Colour (0xffe0a458));
+        addAndMakeVisible (headerLabel);
+
+        apiLabel.setText ("Backend API URL:", juce::dontSendNotification);
+        apiLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
+        addAndMakeVisible (apiLabel);
+
+        apiEditor.setText (processor.getApiClient().getBaseUrl(), juce::dontSendNotification);
+        apiEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff202024));
+        apiEditor.setColour (juce::TextEditor::outlineColourId, juce::Colours::white.withAlpha (0.15f));
+        apiEditor.onTextChange = [this] {
+            processor.getApiClient().setBaseUrl (apiEditor.getText().trim());
+        };
+        addAndMakeVisible (apiEditor);
+
+        libLabel.setText ("Library Folder:", juce::dontSendNotification);
+        libLabel.setFont (juce::Font (juce::FontOptions (12.0f)));
+        addAndMakeVisible (libLabel);
+
+        updateLibraryText();
+        libPathLabel.setColour (juce::Label::backgroundColourId, juce::Colour (0xff202024));
+        libPathLabel.setColour (juce::Label::outlineColourId, juce::Colours::white.withAlpha (0.15f));
+        libPathLabel.setFont (juce::Font (juce::FontOptions (11.0f)));
+        addAndMakeVisible (libPathLabel);
+
+        changeLibButton.setButtonText ("Change...");
+        changeLibButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2a2a30));
+        changeLibButton.onClick = [this] {
+            editorRef.selectLibraryFolder();
+            updateLibraryText();
+        };
+        addAndMakeVisible (changeLibButton);
+
+        statsLabel.setFont (juce::Font (juce::FontOptions (11.0f)));
+        statsLabel.setColour (juce::Label::textColourId, juce::Colours::white.withAlpha (0.6f));
+        addAndMakeVisible (statsLabel);
+
+        updateStats();
+
+        closeButton.setButtonText ("Done");
+        closeButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffe0a458));
+        closeButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
+        closeButton.onClick = [this] {
+            if (auto* callout = findParentComponentOfClass<juce::CallOutBox>())
+                callout->dismiss();
+        };
+        addAndMakeVisible (closeButton);
+    }
+
+    void updateLibraryText()
+    {
+        auto path = processor.getLibraryFolder().getFullPathName();
+        if (path.isEmpty())
+            path = "None selected";
+        libPathLabel.setText (path, juce::dontSendNotification);
+    }
+
+    void updateStats()
+    {
+        juce::String text = "Scanned: " + juce::String (processor.getScannedFiles().size()) + " files\n";
+        text << "AI Indexing: " << juce::String (processor.getEmbeddingIndexedCount())
+             << " / " << juce::String (processor.getEmbeddingTotalCount());
+        statsLabel.setText (text, juce::dontSendNotification);
+    }
+
+    void resized() override
+    {
+        auto area = getLocalBounds().reduced (12);
+        headerLabel.setBounds (area.removeFromTop (24));
+        area.removeFromTop (12);
+
+        auto apiArea = area.removeFromTop (44);
+        apiLabel.setBounds (apiArea.removeFromTop (16));
+        apiEditor.setBounds (apiArea.removeFromTop (24));
+        area.removeFromTop (12);
+
+        auto libArea = area.removeFromTop (48);
+        libLabel.setBounds (libArea.removeFromTop (16));
+        auto libRow = libArea.removeFromTop (28);
+        changeLibButton.setBounds (libRow.removeFromRight (70));
+        libRow.removeFromRight (6);
+        libPathLabel.setBounds (libRow);
+        area.removeFromTop (12);
+
+        auto bottomRow = area;
+        closeButton.setBounds (bottomRow.removeFromRight (60));
+        statsLabel.setBounds (bottomRow);
+    }
+
+private:
+    ChopAudioProcessor& processor;
+    ChopAudioProcessorEditor& editorRef;
+
+    juce::Label headerLabel;
+    juce::Label apiLabel;
+    juce::TextEditor apiEditor;
+
+    juce::Label libLabel;
+    juce::Label libPathLabel;
+    juce::TextButton changeLibButton;
+
+    juce::Label statsLabel;
+    juce::TextButton closeButton;
+};
+
+void ChopAudioProcessorEditor::showSettingsPopup()
+{
+    auto* settingsComp = new SettingsPopupComponent (processorRef, *this);
+    juce::CallOutBox::launchAsynchronously (std::unique_ptr<juce::Component> (settingsComp), 
+                                            settingsButton.getScreenBounds(), 
+                                            nullptr);
 }
 
 void ChopAudioProcessorEditor::doGenerate()
@@ -295,18 +506,12 @@ void ChopAudioProcessorEditor::doGenerate()
             return;
         }
 
-        // The backend saved the new audio into the Generated folder; show that
-        // folder so the fresh files appear and can be auditioned / dragged to a DAW.
-        auto folder = safe->getGeneratedFolder();
-        if (folder.isDirectory())
-        {
-            safe->directoryList.setDirectory (folder, true, false);
-            safe->loadLocalFolder (folder);
-            safe->processorRef.triggerLibraryScan();
-        }
+        auto folder = safe->processorRef.getGeneratedFolder();
+        safe->processorRef.triggerLibraryScan();
+        safe->loadGeneratedSamples();
 
         safe->setStatus ("Generated " + juce::String (result.samples.size())
-                         + " sample(s) for \"" + prompt + "\" → " + folder.getFullPathName());
+                         + " sample(s) for \"" + prompt + "\"");
     });
 }
 
@@ -332,18 +537,42 @@ void ChopAudioProcessorEditor::resized()
     area.removeFromRight (12); // spacer
     auto centrePane = area;
 
-    // Left pane layout
-    auto buttonRow = leftPane.removeFromTop (28);
-    selectFolderButton.setBounds (buttonRow.removeFromLeft (140));
-    buttonRow.removeFromLeft (8);
-    refreshButton.setBounds (buttonRow);
-    leftPane.removeFromTop (8); // spacer
-    fileTree.setBounds (leftPane);
+    // Left pane layout: accordion style
+    settingsButton.setBounds (leftPane.removeFromBottom (28));
+    leftPane.removeFromBottom (8); // spacer
 
-    // Centre pane: top bar (title + search + AI toggle + stop), tag row, results list
+    if (currentTab == TabMode::MySounds)
+    {
+        tabMySounds.setBounds (leftPane.removeFromTop (32));
+        leftPane.removeFromTop (6);
+
+        auto folderArea = leftPane;
+        // Leave space for tabGenerated (32px + 6px spacer) and tabFavorites (32px)
+        folderArea.removeFromBottom (32 + 6 + 32);
+
+        auto buttonRow = folderArea.removeFromTop (28);
+        selectFolderButton.setBounds (buttonRow.removeFromLeft (140));
+        buttonRow.removeFromLeft (8);
+        refreshButton.setBounds (buttonRow);
+        folderArea.removeFromTop (8); // spacer
+        fileTree.setBounds (folderArea);
+
+        // Position the collapsed tabs at the bottom
+        tabGenerated.setBounds (leftPane.removeFromBottom (32 + 6 + 32).removeFromTop (32));
+        tabFavorites.setBounds (leftPane.removeFromBottom (32));
+    }
+    else
+    {
+        tabMySounds.setBounds (leftPane.removeFromTop (32));
+        leftPane.removeFromTop (6);
+        tabGenerated.setBounds (leftPane.removeFromTop (32));
+        leftPane.removeFromTop (6);
+        tabFavorites.setBounds (leftPane.removeFromTop (32));
+    }
+
+    // Centre pane: top bar (title + search + AI toggle), tag row, results list
     auto top = centrePane.removeFromTop (32);
     titleLabel.setBounds (top.removeFromLeft (70));
-    stopButton.setBounds (top.removeFromRight (56).reduced (2, 0));
     searchButton.setBounds (top.removeFromRight (66).reduced (2, 0));
     semanticSearchToggle.setBounds (top.removeFromRight (85).reduced (2, 0));
     searchBox.setBounds (top.reduced (2, 0));
@@ -358,15 +587,18 @@ void ChopAudioProcessorEditor::resized()
     }
     centrePane.removeFromTop (8); // spacer
 
-    // Audio visualizer strip pinned to the bottom of the centre pane.
+    // Waveform preview component pinned to the bottom of the centre pane.
     {
         auto vizArea = centrePane.removeFromBottom (90);
         visualizerHeaderLabel.setBounds (vizArea.removeFromTop (16));
-        processorRef.getVisualiser().setBounds (vizArea);
+        waveformPreview.setBounds (vizArea);
         centrePane.removeFromBottom (8); // spacer above the visualizer
     }
 
+    // Map list, generatedList, and favoritesList to centrePane bounds (only active one will be visible)
     list->setBounds (centrePane);
+    if (generatedList) generatedList->setBounds (centrePane);
+    if (favoritesList) favoritesList->setBounds (centrePane);
 
     // Right pane: generation setup panel
     genHeaderLabel.setBounds (genPanel.removeFromTop (22));

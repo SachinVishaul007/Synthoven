@@ -64,6 +64,7 @@ public:
     juce::File downloadSampleSync (int id, const juce::String& format, juce::String& error);
 
     juce::String getBaseUrl() const { return baseUrl; }
+    void setBaseUrl (const juce::String& url) { baseUrl = url; }
 
 private:
     juce::String baseUrl;

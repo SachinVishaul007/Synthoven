@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
 #include "SampleListBox.h"
+#include "WaveformPreviewComponent.h"
 
 class FoldersOnlyFilter : public juce::FileFilter
 {
@@ -33,6 +34,8 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    void selectLibraryFolder();
+
     // ── FileBrowserListener methods ────────────────────────────────────────
     void selectionChanged() override {}
     void fileClicked (const juce::File& file, const juce::MouseEvent& e) override;
@@ -51,14 +54,13 @@ private:
     void setStatus (const juce::String& text);
     void timerCallback() override;
 
-    void selectLibraryFolder();
     void setLibraryFolder (const juce::File& folder);
 
     ChopAudioProcessor& processorRef;
 
     juce::TextEditor  searchBox;
     juce::TextButton  searchButton  { "Search" };
-    juce::TextButton  stopButton    { "Stop" };
+    WaveformPreviewComponent waveformPreview;
     juce::ToggleButton semanticSearchToggle { "AI Search" };
 
     std::vector<std::unique_ptr<juce::TextButton>> tagButtons;
@@ -80,7 +82,6 @@ private:
     // ── Audio visualizer (waveform of the audio being auditioned) ──────────
     juce::Label       visualizerHeaderLabel;
 
-    // Local library browser components
     juce::TextButton  selectFolderButton { "Select Folder..." };
     juce::TextButton  refreshButton      { "Refresh" };
     FoldersOnlyFilter folderFilter;
@@ -88,7 +89,24 @@ private:
     juce::DirectoryContentsList directoryList;
     juce::FileTreeComponent fileTree;
 
-    std::unique_ptr<SampleListBox>   list;
+    // ── Sidebar Tabs ────────────────────────────────────────────────────────
+    enum class TabMode { MySounds, Generated, Favorites };
+    TabMode currentTab = TabMode::MySounds;
+    void setTabMode (TabMode newMode);
+
+    juce::TextButton tabMySounds { "MY SOUNDS" };
+    juce::TextButton tabGenerated { "GENERATED" };
+    juce::TextButton tabFavorites { "FAVORITES" };
+    juce::TextButton settingsButton { "SETTINGS" };
+
+    std::unique_ptr<SampleListBox> list;            // General search results list
+    std::unique_ptr<SampleListBox> generatedList;   // List for generated tab
+    std::unique_ptr<SampleListBox> favoritesList;   // List for favorites tab
+
+    void loadGeneratedSamples();
+    void loadFavoriteSamples();
+    void showSettingsPopup();
+
     std::unique_ptr<juce::FileChooser> chooser;
 
     bool wasScanningLastCheck = false;

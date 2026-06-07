@@ -19,11 +19,15 @@ public:
     void setSamples (juce::Array<Sample> newSamples);
     void appendSamples (const juce::Array<Sample>& extra);
     int  getNumSamples() const { return samples.size(); }
+    
+    ChopAudioProcessor& getProcessor() { return processor; }
 
     /** Invoked (message thread) when a row is clicked. */
     std::function<void (const Sample&)> onAudition;
     /** Invoked with a status string (e.g. while preparing a drag). */
     std::function<void (const juce::String&)> onStatus;
+    /** Invoked when a sample is favorited/unfavorited */
+    std::function<void (const Sample&)> onFavoriteToggled;
 
     // ListBoxModel
     int  getNumRows() override;

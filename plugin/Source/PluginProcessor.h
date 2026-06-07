@@ -47,6 +47,12 @@ public:
     void auditionFile (const juce::File& file);
     void stopAudition();
     bool isAuditioning() const { return transport.isPlaying(); }
+    void startPlayback();
+    void pausePlayback();
+    double getPlaybackPosition() const;
+    double getPlaybackLength() const;
+    void setPlaybackPosition (double pos);
+    juce::AudioFormatManager& getFormatManager() { return formatManager; }
 
     ChopApiClient& getApiClient() { return apiClient; }
 
@@ -56,10 +62,19 @@ public:
 
     juce::File getLibraryFolder() const { return libraryFolder; }
     void setLibraryFolder (const juce::File& folder);
+    juce::File getGeneratedFolder() const;
 
     void triggerLibraryScan();
     void setScannedFiles (juce::Array<juce::File> files);
     juce::Array<juce::File> getScannedFiles() const;
+
+    // ── Favorites ──────────────────────────────────────────────────────────
+    juce::File getFavoritesFile() const;
+    void loadFavorites();
+    void saveFavorites();
+    bool isFavorite (const juce::String& absolutePath) const;
+    void toggleFavorite (const juce::String& absolutePath);
+    juce::StringArray getFavoritePaths() const;
 
     bool isLibraryScanning() const { return isScanning.load(); }
     int getLibraryScannedCount() const { return scannedCount.load(); }
@@ -94,10 +109,10 @@ private:
             stopThread (4000);
         }
 
-        void startScan (const juce::File& folder)
+        void startScan (const juce::Array<juce::File>& folders)
         {
             stopThread (2000);
-            rootFolder = folder;
+            rootFolders = folders;
             startThread();
         }
 
@@ -107,7 +122,8 @@ private:
             processor.scannedCount = 0;
 
             juce::Array<juce::File> files;
-            scanDir (rootFolder, files);
+            for (const auto& folder : rootFolders)
+                scanDir (folder, files);
 
             if (! threadShouldExit())
             {
@@ -133,7 +149,21 @@ private:
                         break;
 
                     const auto& file = allFiles[i];
-                    juce::String relPath = processor.getRelativePath (file, rootFolder);
+                    juce::String relPath;
+                    bool matched = false;
+                    for (const auto& root : rootFolders) {
+                        if (file.isAChildOf(root)) {
+                            relPath = processor.getRelativePath (file, root);
+                            matched = true; break;
+                        }
+                    }
+                    if (!matched && file.isAChildOf (processor.getLibraryFolder()))
+                        relPath = processor.getRelativePath (file, processor.getLibraryFolder());
+                    else if (file.isAChildOf (processor.getGeneratedFolder()))
+                        relPath = "GEN::" + processor.getRelativePath (file, processor.getGeneratedFolder());
+                    else
+                        relPath = file.getFullPathName();
+                        
                     juce::int64 modTime = file.getLastModificationTime().toMilliseconds();
 
                     bool needsEmbedding = false;
@@ -213,7 +243,7 @@ private:
         }
 
         ChopAudioProcessor& processor;
-        juce::File rootFolder;
+        juce::Array<juce::File> rootFolders;
     };
 
     ChopApiClient apiClient;
@@ -234,6 +264,9 @@ private:
     juce::Array<juce::File> localLibraryFiles;
     juce::CriticalSection localFilesLock;
     LibraryScannerThread scannerThread { *this };
+
+    juce::StringArray favoritePaths;
+    juce::CriticalSection favoritesLock;
 
     // ── Embedding Caching & ML Search ──────────────────────────────────────
     ClapModelManager modelManager;

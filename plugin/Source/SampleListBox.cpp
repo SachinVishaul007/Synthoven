@@ -44,29 +44,160 @@ namespace
             g.fillEllipse ((float) bounds.getX(), (float) bounds.getCentreY() - 3.0f, 6.0f, 6.0f);
             bounds.removeFromLeft (16);
 
-            auto rightCol = bounds.removeFromRight (90);
+            // Right column layout: duration/bpm metadata + mini-waveform + heart button
+            auto rightSide = bounds.removeFromRight (180);
+            
+            // Heart button
+            auto heartBox = rightSide.removeFromRight (30);
+            
+            // Mini-waveform area
+            juce::Rectangle<int> miniWaveformRect (rightSide.getRight() - 70, bounds.getY() + (bounds.getHeight() - 20) / 2, 70, 20);
+            rightSide.removeFromRight (70);
+            
+            // Remaining portion of rightSide (80px) is for duration/bpm metadata
+            auto rowMetaArea = rightSide;
 
-            // Name + subtitle
-            auto nameArea = bounds.removeFromTop (bounds.getHeight() / 2);
+            // Name area (top half) and Tags area (bottom half)
+            auto nameArea = bounds.removeFromTop (24);
+            auto tagsArea = bounds; // remaining 24px high area
+
+            // Draw Name
             g.setColour (juce::Colours::white.withAlpha (0.92f));
-            g.setFont (juce::Font (juce::FontOptions (13.0f)));
+            g.setFont (juce::Font (juce::FontOptions (14.0f).withStyle ("Bold")));
             g.drawText (sample.name, nameArea, juce::Justification::centredLeft, true);
 
-            g.setColour (juce::Colours::white.withAlpha (0.45f));
-            g.setFont (juce::Font (juce::FontOptions (11.0f)));
-            g.drawText (sample.subtitle(), bounds, juce::Justification::centredLeft, true);
+            // Prepare tag chips
+            juce::StringArray tagsToDraw;
+            for (auto& t : sample.tags)
+            {
+                if (t.isNotEmpty())
+                    tagsToDraw.add (t.toLowerCase());
+            }
 
-            // Duration + bpm
+            if (tagsToDraw.isEmpty())
+            {
+                juce::StringArray words;
+                words.addTokens (sample.name, " -_", "");
+                for (auto& w : words)
+                {
+                    if (w.equalsIgnoreCase ("kick") || w.equalsIgnoreCase ("bass") || 
+                        w.equalsIgnoreCase ("snare") || w.equalsIgnoreCase ("hat") || 
+                        w.equalsIgnoreCase ("clap") || w.equalsIgnoreCase ("synth") || 
+                        w.equalsIgnoreCase ("loop") || w.equalsIgnoreCase ("vocal") || 
+                        w.equalsIgnoreCase ("vox") || w.equalsIgnoreCase ("perc") || 
+                        w.equalsIgnoreCase ("lead") || w.equalsIgnoreCase ("pad") ||
+                        w.equalsIgnoreCase ("fx") || w.equalsIgnoreCase ("drum") ||
+                        w.equalsIgnoreCase ("kickdrum") || w.equalsIgnoreCase ("snaredrum"))
+                    {
+                        tagsToDraw.add (w.toLowerCase());
+                    }
+                }
+                if (tagsToDraw.isEmpty())
+                {
+                    if (sample.isGenerated())
+                        tagsToDraw.add ("ai-gen");
+                    else
+                        tagsToDraw.add ("sample");
+                }
+            }
+
+            // Draw tag chips
+            float tagX = (float)tagsArea.getX();
+            float tagY = (float)tagsArea.getY() + (tagsArea.getHeight() - 16.0f) / 2.0f;
+            
+            g.setFont (juce::Font (juce::FontOptions (10.0f)));
+            for (const auto& tag : tagsToDraw)
+            {
+                if (tag.isEmpty()) continue;
+                
+                float textWidth = (float) juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), tag);
+                float chipWidth = textWidth + 12.0f; // 6px padding on each side
+                
+                // Draw rounded rectangle background
+                g.setColour (juce::Colours::white.withAlpha (0.08f));
+                g.fillRoundedRectangle (tagX, tagY, chipWidth, 16.0f, 4.0f);
+                
+                // Draw border
+                g.setColour (juce::Colours::white.withAlpha (0.15f));
+                g.drawRoundedRectangle (tagX, tagY, chipWidth, 16.0f, 4.0f, 1.0f);
+                
+                // Draw text
+                g.setColour (juce::Colours::white.withAlpha (0.8f));
+                g.drawText (tag, (int)tagX, (int)tagY, (int)chipWidth, 16, juce::Justification::centred, false);
+                
+                tagX += chipWidth + 6.0f; // 6px gap
+                
+                if (tagX > (float)nameArea.getRight() - 10.0f)
+                    break;
+            }
+
+            // Draw Duration + BPM metadata
             g.setColour (juce::Colours::white.withAlpha (0.6f));
             g.setFont (juce::Font (juce::FontOptions (11.0f)));
             juce::String meta = sample.durationText();
-            if (sample.bpm > 0) meta << "  " << sample.bpm << " bpm";
-            g.drawText (meta, rightCol, juce::Justification::centredRight, false);
+            if (sample.bpm > 0) meta << "\n" << sample.bpm << " bpm"; // Stack or keep compact
+            g.drawText (meta, rowMetaArea, juce::Justification::centredRight, false);
+
+            // Draw deterministic mini-waveform preview
+            g.setColour (accent.withAlpha (0.5f));
+            size_t hash = std::hash<std::string>{}(sample.name.toStdString());
+            const int numBars = 16;
+            float barWidth = (float)miniWaveformRect.getWidth() / numBars;
+            float maxBarHeight = (float)miniWaveformRect.getHeight();
+            
+            for (int i = 0; i < numBars; ++i)
+            {
+                unsigned int seed = (unsigned int)(hash ^ i);
+                seed = (seed ^ 61) ^ (seed >> 16);
+                seed *= 9;
+                seed = seed ^ (seed >> 4);
+                seed *= 0x27d4eb2d;
+                seed = seed ^ (seed >> 15);
+                float val = (float)(seed % 100) / 100.0f;
+                
+                float envelope = 1.0f;
+                float progress = (float)i / (float)(numBars - 1);
+                if (progress < 0.2f)
+                    envelope = progress / 0.2f;
+                else
+                    envelope = 1.0f - (progress - 0.2f) / 0.8f;
+                
+                float h = val * maxBarHeight * envelope;
+                h = juce::jmax (2.0f, h);
+                
+                float x = (float)miniWaveformRect.getX() + i * barWidth + (barWidth - 1.5f) / 2.0f;
+                float y = (float)miniWaveformRect.getY() + (maxBarHeight - h) / 2.0f;
+                
+                g.fillRoundedRectangle (x, y, 1.5f, h, 0.75f);
+            }
+
+            // Draw Heart (Favorite)
+            if (sample.localFilePath.isNotEmpty())
+            {
+                heartArea = heartBox;
+                bool isFav = owner.getProcessor().isFavorite (sample.localFilePath);
+                g.setColour (isFav ? juce::Colours::red : juce::Colours::white.withAlpha(0.3f));
+                g.setFont (juce::Font (juce::FontOptions (22.0f)));
+                juce::String heartStr = juce::String::fromUTF8 (isFav ? "\xe2\x99\xa5" : "\xe2\x99\xa1");
+                g.drawText (heartStr, heartArea, juce::Justification::centred, false);
+            }
+            else
+            {
+                heartArea = {};
+            }
         }
 
-        void mouseDown (const juce::MouseEvent&) override
+        void mouseDown (const juce::MouseEvent& e) override
         {
             dragging = false;
+            if (! heartArea.isEmpty() && heartArea.contains (e.getPosition()))
+            {
+                owner.getProcessor().toggleFavorite (sample.localFilePath);
+                repaint();
+                if (owner.onFavoriteToggled)
+                    owner.onFavoriteToggled (sample);
+                return;
+            }
             owner.rowClicked (row);
         }
 
@@ -85,12 +216,13 @@ namespace
         int  row = -1;
         bool selected = false;
         bool dragging = false;
+        juce::Rectangle<int> heartArea;
     };
 }
 
 SampleListBox::SampleListBox (ChopAudioProcessor& p) : processor (p)
 {
-    listBox.setRowHeight (44);
+    listBox.setRowHeight (56);
     listBox.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff161619));
     addAndMakeVisible (listBox);
 }
