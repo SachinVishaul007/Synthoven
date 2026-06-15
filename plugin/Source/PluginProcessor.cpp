@@ -16,9 +16,29 @@ ChopAudioProcessor::ChopAudioProcessor()
     auto currentExe = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
     auto dllFolder = currentExe.getParentDirectory();
     auto onnxDll = dllFolder.getChildFile("onnxruntime.dll");
+
+    juce::File logFile ("C:\\Users\\91974\\.gemini\\antigravity\\chop_debug.log");
+    logFile.appendText("--- Chop Loading ---\n");
+    logFile.appendText("currentExe: " + currentExe.getFullPathName() + "\n");
+    logFile.appendText("dllFolder: " + dllFolder.getFullPathName() + "\n");
+    logFile.appendText("onnxDll path: " + onnxDll.getFullPathName() + "\n");
+    logFile.appendText("onnxDll exists: " + juce::String((int)onnxDll.existsAsFile()) + "\n");
+
     if (onnxDll.existsAsFile())
     {
-        LoadLibraryW(onnxDll.getFullPathName().toWideCharPointer());
+        auto hModule = LoadLibraryW(onnxDll.getFullPathName().toWideCharPointer());
+        if (hModule == nullptr)
+        {
+            logFile.appendText("LoadLibraryW failed. Error code: " + juce::String((int)GetLastError()) + "\n");
+        }
+        else
+        {
+            logFile.appendText("LoadLibraryW succeeded.\n");
+        }
+    }
+    else
+    {
+        logFile.appendText("onnxruntime.dll not found at expected path.\n");
     }
 #endif
 
