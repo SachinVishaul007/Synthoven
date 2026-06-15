@@ -1,0 +1,13 @@
+# CMake build output (also where FetchContent downloads JUCE)
+build/
+cmake-build-*/
+
+# IDE
+.idea/
+.vscode/
+*.xcodeproj/
+*.user
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,36 @@
+# Maven
+target/
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Local H2 database (runtime data, rebuilt on scan)
+data/
+*.mv.db
+*.trace.db
+
+# Local config / secrets
+*.env
+.env
+application-local.properties
+
+# Local launch script holding the Stability API key
+run-stableaudio.sh

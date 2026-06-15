@@ -1,0 +1,10 @@
+# IDEs
+.vscode/
+
+# Untracked media files
+/Backing track video.wav
+/Other Files/
+/Screenshot 2026-06-07 121814.png
+
+# Old frontend folder artifacts (build outputs / node_modules)
+/frontend/
